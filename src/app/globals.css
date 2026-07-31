@@ -1,0 +1,31 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --color-primary: #2563eb;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  @apply bg-white text-slate-800 antialiased;
+}
+
+.katex {
+  font-size: 1.05em;
+}
+
+.panel-scroll::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+.panel-scroll::-webkit-scrollbar-thumb {
+  @apply rounded-full bg-slate-300;
+}
+.panel-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
