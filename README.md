@@ -90,6 +90,7 @@ src/
 
 ## 文档
 
+- [使用指南（操作文档）](docs/user-guide.md)
 - [系统架构](docs/architecture.md)
 - [中学数学范围](docs/middle-school-scope.md)
 - [导数入门范围](docs/calculus-intro-scope.md)
