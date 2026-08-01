@@ -183,6 +183,7 @@ export function MathCanvasBoard() {
   const [ready, setReady] = useState(false);
   const [viewInfo, setViewInfo] = useState<ViewInfo>({ level: 100, range: "" });
   const [canvasSize, setCanvasSize] = useState<{ w: number; h: number } | null>(null);
+  const [ratioLocked, setRatioLocked] = useState(false);
   const hoverData = useHoverPointStore((s) => s.data);
 
   const expressions = useMathCanvasStore((s) => s.expressions);
@@ -242,7 +243,7 @@ const derivativeVisibility = useMathCanvasStore((s) => s.derivativeVisibility);
       const containerId = "math-canvas-board";
       if (!containerRef.current.id) containerRef.current.id = containerId;
 
-      const board = JXG.JSXGraph.initBoard(containerRef.current, {
+      const boardOptions = {
         boundingbox: [-10, 10, 10, -10],
         axis: false,
         grid: false,
@@ -251,7 +252,12 @@ const derivativeVisibility = useMathCanvasStore((s) => s.derivativeVisibility);
         showNavigation: false,
         keepaspectratio: false,
         resize: { enabled: true, throttle: 100 },
-      }) as unknown as Board;
+        registerEvents: { wheel: false } as boolean | { wheel: boolean },
+      };
+      const board = JXG.JSXGraph.initBoard(
+        containerRef.current,
+        boardOptions as unknown as Parameters<typeof JXG.JSXGraph.initBoard>[1],
+      ) as unknown as Board;
 
       const gridEl = board.create("grid", [], { strokeColor: "#e2e8f0", fixed: true }) as El;
       const xAxis = board.create("axis", [[-1000, 0], [1000, 0]], { strokeColor: "#94a3b8", strokeWidth: 1.2 }) as El;
@@ -546,12 +552,32 @@ const derivativeVisibility = useMathCanvasStore((s) => s.derivativeVisibility);
         pendingClick = null;
       };
 
+      let lastRatioWheelTime = 0;
+      const onWheel = (e: WheelEvent) => {
+        e.preventDefault();
+        const now = Date.now();
+        if (now - lastRatioWheelTime < 60) return;
+        lastRatioWheelTime = now;
+        try {
+          const st = useMathCanvasStore.getState();
+          const current =
+            st.canvasSettings.canvasRatio === "custom"
+              ? st.canvasSettings.customRatio
+              : (resolveCanvasRatio(st.canvasSettings.canvasRatio, st.canvasSettings.customRatio) ?? 1);
+          const next = Math.min(4, Math.max(0.25, current - e.deltaY * 0.001));
+          st.updateCanvasSettings({ canvasRatio: "custom", customRatio: next });
+        } catch {
+          /* ignore */
+        }
+      };
+
       containerEl.addEventListener("pointerdown", onPointerDown);
       window.addEventListener("pointermove", onPointerMove);
       window.addEventListener("pointerup", onPointerUp);
       window.addEventListener("pointercancel", onPointerUp);
       containerEl.addEventListener("mouseleave", onLeave);
       window.addEventListener("keydown", onKeyDown);
+      containerEl.addEventListener("wheel", onWheel, { passive: false });
 
       cleanupListeners = () => {
         containerEl.removeEventListener("pointerdown", onPointerDown);
@@ -560,6 +586,7 @@ const derivativeVisibility = useMathCanvasStore((s) => s.derivativeVisibility);
         window.removeEventListener("pointercancel", onPointerUp);
         containerEl.removeEventListener("mouseleave", onLeave);
         window.removeEventListener("keydown", onKeyDown);
+        containerEl.removeEventListener("wheel", onWheel);
       };
 
       controller = {
@@ -960,12 +987,18 @@ const derivativeVisibility = useMathCanvasStore((s) => s.derivativeVisibility);
             <button
               type="button"
               title="将两坐标轴单位长度调整为 1:1（正方形画布）"
-              onClick={() => updateCanvasSettings({ canvasRatio: "1:1" })}
+              onClick={() => {
+                if (ratioLocked) return;
+                setRatioLocked(true);
+                updateCanvasSettings({ canvasRatio: "1:1" });
+                window.setTimeout(() => setRatioLocked(false), 500);
+              }}
+              disabled={ratioLocked}
               className={`rounded-md px-2 py-1 text-xs font-medium transition-colors ${
                 canvasRatio === "1:1"
                   ? "bg-primary-600 text-white"
                   : "text-slate-600 hover:bg-primary-50 hover:text-primary-700"
-              }`}
+              } ${ratioLocked ? "opacity-50" : ""}`}
             >
               1:1
             </button>
