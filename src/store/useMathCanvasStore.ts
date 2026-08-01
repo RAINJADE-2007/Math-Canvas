@@ -42,6 +42,7 @@ function defaultCanvasSettings(): CanvasSettings {
     showAxes: true,
     showLabels: true,
     showMonotonicityHint: false,
+    canvasRatio: "1:1",
     viewVersion: 0,
   };
 }
@@ -133,6 +134,7 @@ interface MathCanvasActions {
 
   addGeometryObject: (obj: GeometryObject) => void;
   updateGeometryObject: (id: string, patch: Partial<GeometryObject>) => void;
+  moveGeometryObject: (id: string, patch: Partial<GeometryObject>) => void;
   removeGeometryObject: (id: string) => void;
   toggleGeometryVisibility: (id: string) => void;
 
@@ -324,6 +326,13 @@ export const useMathCanvasStore = create<MathCanvasStore>()(
       updateGeometryObject: (id, patch) =>
         set((state) => ({
           ...withHistory(state),
+          geometryObjects: state.geometryObjects.map((g) =>
+            g.id === id ? { ...g, ...patch, updatedAt: Date.now() } : g,
+          ),
+        })),
+
+      moveGeometryObject: (id, patch) =>
+        set((state) => ({
           geometryObjects: state.geometryObjects.map((g) =>
             g.id === id ? { ...g, ...patch, updatedAt: Date.now() } : g,
           ),

@@ -5,6 +5,7 @@ import type JXG from "jsxgraph";
 import "@/styles/jsxgraph.css";
 import { useMathCanvasStore, uid } from "@/store/useMathCanvasStore";
 import { colorForIndex } from "@/constants/colors";
+import { CANVAS_RATIO_VALUE } from "@/constants/canvas";
 import { createSafeFunction } from "@/math-engine/core/evaluator/evaluator";
 import type { SafeFunction } from "@/math-engine/core/evaluator/evaluator";
 import { sampleFunction } from "@/math-engine/core/evaluator/sampler";
@@ -119,10 +120,18 @@ interface BoardController {
     startY: number;
     elements: El[];
   } | null;
+  geometryDrag: {
+    id: string;
+    type: GeometryObjectType;
+    startUserX: number;
+    startUserY: number;
+    base: Partial<GeometryObject>;
+  } | null;
   fns: Map<string, NumericFunction>;
   derivativeFns: Map<string, (x: number) => number>;
   redraw: () => void;
   autoFit: () => void;
+  fitView: () => void;
   getViewInfo: () => ViewInfo;
 }
 
@@ -169,9 +178,11 @@ function curveSignature(): string {
 
 export function MathCanvasBoard() {
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const wrapperRef = useRef<HTMLDivElement | null>(null);
   const controllerRef = useRef<BoardController | null>(null);
   const [ready, setReady] = useState(false);
   const [viewInfo, setViewInfo] = useState<ViewInfo>({ level: 100, range: "" });
+  const [canvasSize, setCanvasSize] = useState<{ w: number; h: number } | null>(null);
   const hoverData = useHoverPointStore((s) => s.data);
 
   const expressions = useMathCanvasStore((s) => s.expressions);
@@ -186,14 +197,40 @@ const derivativeVisibility = useMathCanvasStore((s) => s.derivativeVisibility);
   const showAxes = useMathCanvasStore((s) => s.canvasSettings.showAxes);
   const showLabels = useMathCanvasStore((s) => s.canvasSettings.showLabels);
   const showMonotonicityHint = useMathCanvasStore((s) => s.canvasSettings.showMonotonicityHint);
+  const canvasRatio = useMathCanvasStore((s) => s.canvasSettings.canvasRatio);
   const viewVersion = useMathCanvasStore((s) => s.canvasSettings.viewVersion);
   const activeTool = useMathCanvasStore((s) => s.activeTool);
   const pinnedData = usePinnedPointsData();
 
   useEffect(() => {
+    const wrapper = wrapperRef.current;
+    if (!wrapper) return;
+    const updateSize = () => {
+      const rect = wrapper.getBoundingClientRect();
+      if (rect.width < 2 || rect.height < 2) return;
+      const ratio = CANVAS_RATIO_VALUE[canvasRatio];
+      if (ratio === null) {
+        setCanvasSize({ w: rect.width, h: rect.height });
+        return;
+      }
+      const cellRatio = rect.width / rect.height;
+      if (ratio > cellRatio) {
+        setCanvasSize({ w: rect.width, h: rect.width / ratio });
+      } else {
+        setCanvasSize({ w: rect.height * ratio, h: rect.height });
+      }
+    };
+    updateSize();
+    const ro = new ResizeObserver(updateSize);
+    ro.observe(wrapper);
+    return () => ro.disconnect();
+  }, [canvasRatio]);
+
+  useEffect(() => {
     let cancelled = false;
     let controller: BoardController | null = null;
     let cleanupListeners: (() => void) | null = null;
+    let fitObserver: ResizeObserver | null = null;
 
     (async () => {
       const JXGModule = await import("jsxgraph");
@@ -283,6 +320,7 @@ const derivativeVisibility = useMathCanvasStore((s) => s.derivativeVisibility);
       const containerEl = containerRef.current;
       let panState: { startX: number; startY: number; bbox: number[] } | null = null;
       let lastTranslateTime = 0;
+      let lastGeometryDragTime = 0;
       let pendingClick: {
         x: number;
         y: number;
@@ -308,9 +346,19 @@ const derivativeVisibility = useMathCanvasStore((s) => s.derivativeVisibility);
             elType?: string;
             hasPoint?: (x: number, y: number) => boolean;
             isDraggable?: boolean;
+            draggable?: () => boolean;
             visPropCalc?: { visible?: boolean };
           };
-          if (!el.hasPoint || !el.isDraggable) continue;
+          const isDraggableEl = typeof el.draggable === "function"
+            ? (() => {
+                try {
+                  return !!el.draggable();
+                } catch {
+                  return !!el.isDraggable;
+                }
+              })()
+            : !!el.isDraggable;
+          if (!el.hasPoint || !isDraggableEl) continue;
           const type = el.elType ?? "";
           if (type !== "point" && type !== "glider") continue;
           if (el.visPropCalc && el.visPropCalc.visible === false) continue;
@@ -373,6 +421,26 @@ const derivativeVisibility = useMathCanvasStore((s) => s.derivativeVisibility);
           e.preventDefault();
           return;
         }
+        const geometryDrag = controller?.geometryDrag;
+        if (geometryDrag) {
+          const now = Date.now();
+          if (now - lastGeometryDragTime >= 40) {
+            lastGeometryDragTime = now;
+            try {
+              const usr = getUsrFromEvent(e);
+              if (usr) {
+                const dx = usr[0] - geometryDrag.startUserX;
+                const dy = usr[1] - geometryDrag.startUserY;
+                const patch = translateGeometryPatch(geometryDrag.type, geometryDrag.base, dx, dy);
+                useMathCanvasStore.getState().moveGeometryObject(geometryDrag.id, patch);
+              }
+            } catch {
+              /* ignore */
+            }
+          }
+          e.preventDefault();
+          return;
+        }
         if (pendingClick) {
           if (!pendingClick.moved) {
             const moved =
@@ -411,6 +479,21 @@ const derivativeVisibility = useMathCanvasStore((s) => s.derivativeVisibility);
         if (controller?.translateDrag) {
           controller.translateDrag = null;
           lastTranslateTime = 0;
+          try {
+            containerEl.style.cursor = "";
+          } catch {
+            /* ignore */
+          }
+          try {
+            controller.redraw();
+          } catch {
+            /* ignore */
+          }
+          return;
+        }
+        if (controller?.geometryDrag) {
+          controller.geometryDrag = null;
+          lastGeometryDragTime = 0;
           try {
             containerEl.style.cursor = "";
           } catch {
@@ -491,6 +574,7 @@ const derivativeVisibility = useMathCanvasStore((s) => s.derivativeVisibility);
         dragging: false,
         translateDrag: null,
         geometryPlacement: null,
+        geometryDrag: null,
         fns: new Map(),
         derivativeFns: new Map(),
         redraw: () => {
@@ -518,8 +602,32 @@ const derivativeVisibility = useMathCanvasStore((s) => s.derivativeVisibility);
           if (!Number.isFinite(minY) || !Number.isFinite(maxY)) return;
           const span = maxY - minY;
           const pad = span > 0 ? span * 0.12 : 1;
+          const centerX = (xMin + xMax) / 2;
+          const centerY = (minY + maxY) / 2;
+          const halfH = (span + pad * 2) / 2;
+          const rect = containerEl.getBoundingClientRect();
+          const ratio = rect.width / rect.height;
+          const halfW = halfH * ratio;
           try {
-            board.setBoundingBox([xMin, maxY + pad, xMax, minY - pad]);
+            board.setBoundingBox([centerX - halfW, centerY + halfH, centerX + halfW, centerY - halfH]);
+          } catch {
+            /* ignore */
+          }
+        },
+        fitView: () => {
+          const rect = containerEl.getBoundingClientRect();
+          if (rect.width < 2 || rect.height < 2) return;
+          const bb = board.getBoundingBox();
+          const halfH = (bb[1] - bb[3]) / 2;
+          if (!Number.isFinite(halfH) || halfH <= 1e-9) return;
+          const currentRatio = (bb[2] - bb[0]) / (bb[1] - bb[3]);
+          const targetRatio = rect.width / rect.height;
+          if (Math.abs(currentRatio - targetRatio) / Math.max(targetRatio, 1e-9) < 0.02) return;
+          const centerX = (bb[0] + bb[2]) / 2;
+          const centerY = (bb[1] + bb[3]) / 2;
+          const halfW = halfH * targetRatio;
+          try {
+            board.setBoundingBox([centerX - halfW, centerY + halfH, centerX + halfW, centerY - halfH]);
           } catch {
             /* ignore */
           }
@@ -714,12 +822,33 @@ const derivativeVisibility = useMathCanvasStore((s) => s.derivativeVisibility);
       setViewInfo(computeViewInfo(board));
       setReady(true);
       controllerRef.current = controller;
+      try {
+        controller.fitView();
+      } catch {
+        /* ignore */
+      }
+
+      if (typeof ResizeObserver !== "undefined") {
+        fitObserver = new ResizeObserver(() => {
+          try {
+            controller?.fitView();
+          } catch {
+            /* ignore */
+          }
+        });
+        if (containerEl) fitObserver.observe(containerEl);
+      }
     })();
 
     return () => {
       cancelled = true;
       try {
         cleanupListeners?.();
+      } catch {
+        /* ignore */
+      }
+      try {
+        fitObserver?.disconnect();
       } catch {
         /* ignore */
       }
@@ -762,20 +891,29 @@ const derivativeVisibility = useMathCanvasStore((s) => s.derivativeVisibility);
     } catch {
       /* ignore */
     }
+    try {
+      controllerRef.current.fitView();
+    } catch {
+      /* ignore */
+    }
   }, [ready, viewVersion]);
 
   return (
-    <div className="relative h-full w-full">
+    <div ref={wrapperRef} className="flex h-full w-full items-center justify-center">
       <div
-        ref={containerRef}
-        className={`h-full w-full ${
-          activeTool === "pan"
-            ? "cursor-grab"
-            : activeTool === "add-point" || activeTool === "add-line" || activeTool === "add-circle"
-              ? "cursor-crosshair"
-              : ""
-        }`}
-      />
+        className="relative h-full w-full"
+        style={canvasSize ? { width: canvasSize.w, height: canvasSize.h } : undefined}
+      >
+        <div
+          ref={containerRef}
+          className={`h-full w-full ${
+            activeTool === "pan"
+              ? "cursor-grab"
+              : activeTool === "add-point" || activeTool === "add-line" || activeTool === "add-circle"
+                ? "cursor-crosshair"
+                : ""
+          }`}
+        />
       {activeTool === "add-point" || activeTool === "add-line" || activeTool === "add-circle" ? (
         <div className="pointer-events-none absolute left-1/2 top-3 z-10 -translate-x-1/2 whitespace-nowrap rounded-md bg-primary-600/90 px-2.5 py-1 text-xs text-white shadow-card">
           {activeTool === "add-point"
@@ -904,6 +1042,7 @@ const derivativeVisibility = useMathCanvasStore((s) => s.derivativeVisibility);
             <p className="mt-1 text-xs text-slate-400">点击曲线可选取该点并固定显示数据，拖动标记可移动。</p>
           )}
         </div>
+      </div>
       </div>
     </div>
   );
@@ -1174,6 +1313,66 @@ function handleGeometryClick(board: Board, controller: BoardController, x: numbe
   }
 }
 
+function translateGeometryPatch(
+  type: GeometryObjectType,
+  base: Partial<GeometryObject>,
+  dx: number,
+  dy: number,
+): Partial<GeometryObject> {
+  if (type === "point") {
+    return { x: (base.x ?? 0) + dx, y: (base.y ?? 0) + dy };
+  }
+  if (type === "line" || type === "segment") {
+    return {
+      x1: (base.x1 ?? 0) + dx,
+      y1: (base.y1 ?? 0) + dy,
+      x2: (base.x2 ?? 0) + dx,
+      y2: (base.y2 ?? 0) + dy,
+    };
+  }
+  return {
+    centerX: (base.centerX ?? 0) + dx,
+    centerY: (base.centerY ?? 0) + dy,
+  };
+}
+
+function bindGeometryDown(board: Board, controller: BoardController, el: El, g: GeometryObject): void {
+  try {
+    el.on("down", (evt) => {
+      const st = useMathCanvasStore.getState();
+      st.selectObject(g.id);
+      if (st.activeTool === "select") {
+        try {
+          const coords = board.getUsrCoordsOfMouse(evt as MouseEvent);
+          if (coords) {
+            controller.geometryDrag = {
+              id: g.id,
+              type: g.type,
+              startUserX: coords[0],
+              startUserY: coords[1],
+              base: {
+                x: g.x,
+                y: g.y,
+                x1: g.x1,
+                y1: g.y1,
+                x2: g.x2,
+                y2: g.y2,
+                centerX: g.centerX,
+                centerY: g.centerY,
+                radius: g.radius,
+              },
+            };
+          }
+        } catch {
+          /* ignore */
+        }
+      }
+    });
+  } catch {
+    /* ignore */
+  }
+}
+
 function drawGeometry(board: Board, controller: BoardController, geometryObjects: GeometryObject[], showLabels: boolean): void {
   for (const g of geometryObjects) {
     if (!g.visible) continue;
@@ -1185,14 +1384,9 @@ function drawGeometry(board: Board, controller: BoardController, geometryObjects
           size: 3,
           strokeColor: g.color,
           fillColor: g.color,
+          fixed: true,
         }) as El;
-        try {
-          el.on("down", () => {
-            useMathCanvasStore.getState().selectObject(g.id);
-          });
-        } catch {
-          /* ignore */
-        }
+        bindGeometryDown(board, controller, el, g);
         controller.geometryElements.push(el);
       } else if (g.type === "line" && g.x1 !== undefined) {
         const el = board.create("line", [[g.x1, g.y1], [g.x2, g.y2]], {
@@ -1200,14 +1394,9 @@ function drawGeometry(board: Board, controller: BoardController, geometryObjects
           strokeWidth: 2,
           name: g.label,
           withLabel: showLabels,
+          fixed: true,
         }) as El;
-        try {
-          el.on("down", () => {
-            useMathCanvasStore.getState().selectObject(g.id);
-          });
-        } catch {
-          /* ignore */
-        }
+        bindGeometryDown(board, controller, el, g);
         controller.geometryElements.push(el);
       } else if (g.type === "segment" && g.x1 !== undefined) {
         const el = board.create("segment", [[g.x1, g.y1], [g.x2, g.y2]], {
@@ -1215,14 +1404,9 @@ function drawGeometry(board: Board, controller: BoardController, geometryObjects
           strokeWidth: 2.5,
           name: g.label,
           withLabel: showLabels,
+          fixed: true,
         }) as El;
-        try {
-          el.on("down", () => {
-            useMathCanvasStore.getState().selectObject(g.id);
-          });
-        } catch {
-          /* ignore */
-        }
+        bindGeometryDown(board, controller, el, g);
         controller.geometryElements.push(el);
       } else if (g.type === "circle" && g.centerX !== undefined && g.radius !== undefined) {
         const el = board.create("circle", [[g.centerX, g.centerY], g.radius], {
@@ -1230,14 +1414,9 @@ function drawGeometry(board: Board, controller: BoardController, geometryObjects
           strokeWidth: 2,
           name: g.label,
           withLabel: showLabels,
+          fixed: true,
         }) as El;
-        try {
-          el.on("down", () => {
-            useMathCanvasStore.getState().selectObject(g.id);
-          });
-        } catch {
-          /* ignore */
-        }
+        bindGeometryDown(board, controller, el, g);
         controller.geometryElements.push(el);
       }
     } catch {

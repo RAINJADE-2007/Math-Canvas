@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useMathCanvasStore } from "@/store/useMathCanvasStore";
 import { uid } from "@/store/useMathCanvasStore";
 import { calculateGeometryObject } from "@/math-engine/middle-school/geometry/geometry";
+import { geometryEquation } from "@/math-engine/middle-school/geometry/equation";
 import type { GeometryObject } from "@/types";
 import { colorForIndex } from "@/constants/colors";
 
@@ -229,6 +230,14 @@ export function GeometryPanel() {
                       </button>
                     </div>
                   </div>
+                  {(() => {
+                    const eq = geometryEquation(obj);
+                    return eq ? (
+                      <p className="mt-1.5 font-mono text-xs text-slate-600">
+                        方程：<span className="text-slate-800">{eq.equation}</span>
+                      </p>
+                    ) : null;
+                  })()}
                   <ul className="mt-2 space-y-0.5">
                     {calculations.items.map((item, index) => (
                       <li key={index} className="flex gap-2 text-xs text-slate-600">

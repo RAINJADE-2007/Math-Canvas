@@ -76,8 +76,11 @@ export interface CanvasSettings {
   showAxes: boolean;
   showLabels: boolean;
   showMonotonicityHint: boolean;
+  canvasRatio: CanvasRatio;
   viewVersion: number;
 }
+
+export type CanvasRatio = "1:1" | "4:3" | "16:9" | "3:4" | "9:16" | "fill";
 
 export type GeometryObjectType = "point" | "line" | "segment" | "circle";
 

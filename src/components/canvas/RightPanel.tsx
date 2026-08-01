@@ -6,8 +6,10 @@ import { useHoverPointStore } from "@/store/useHoverPointStore";
 import { usePinnedPointsData } from "@/store/usePinnedPointsData";
 import { analyzeMiddleSchoolFunction } from "@/math-engine/middle-school/functions/analyze";
 import { describeTranslation, translateFunction } from "@/math-engine/middle-school/functions/translate";
+import { CANVAS_RATIO_OPTIONS } from "@/constants/canvas";
+import { geometryEquation, parseGeometryEquation } from "@/math-engine/middle-school/geometry/equation";
 import { LatexView } from "@/components/common/LatexView";
-import type { MathExpression } from "@/types";
+import type { GeometryObject, MathExpression } from "@/types";
 
 export function RightPanel() {
   const selectedObjectId = useMathCanvasStore((s) => s.selectedObjectId);
@@ -178,10 +180,7 @@ export function RightPanel() {
             <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">
               几何对象属性
             </h3>
-            <p className="text-sm text-slate-600">
-              对象「{selectedGeometry.label}」的相关计算请见「几何」面板。
-            </p>
-            <label className="mt-3 flex items-center gap-2 text-sm">
+            <label className="flex items-center gap-2 text-sm">
               <input
                 type="checkbox"
                 checked={selectedGeometry.visible}
@@ -189,6 +188,10 @@ export function RightPanel() {
               />
               <span className="text-slate-600">显示对象</span>
             </label>
+            <div className="mt-3 space-y-2 text-xs text-slate-600">
+              <p>在画布上拖动该对象可整体平移，数据与方程将随之更新。</p>
+            </div>
+            <GeometryEquationEditor obj={selectedGeometry} />
           </section>
         ) : (
           <section>
@@ -228,6 +231,26 @@ export function RightPanel() {
                   onChange={(e) => updateCanvasSettings({ showMonotonicityHint: e.target.checked })}
                 />
               </label>
+              <div>
+                <p className="mb-1.5 text-slate-600">画布比例</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {CANVAS_RATIO_OPTIONS.map((option) => (
+                    <button
+                      key={option.id}
+                      type="button"
+                      onClick={() => updateCanvasSettings({ canvasRatio: option.id })}
+                      title="调整画布长宽比，坐标轴单位长度始终一致（保证圆是圆）"
+                      className={`rounded-md px-2 py-1 text-xs transition-colors ${
+                        canvasSettings.canvasRatio === option.id
+                          ? "bg-primary-600 text-white"
+                          : "border border-slate-200 text-slate-600 hover:border-primary-300 hover:text-primary-700"
+                      }`}
+                    >
+                      {option.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
             </div>
             <p className="mt-3 text-xs text-slate-400">
               点击画布中的函数或下方列表项即可选中并查看性质分析。
@@ -294,6 +317,74 @@ function PointDataSection({
 function fmtNum(n: number): string {
   if (!Number.isFinite(n)) return "—";
   return Number.isInteger(n) ? String(n) : n.toFixed(3);
+}
+
+function GeometryEquationEditor({ obj }: { obj: GeometryObject }) {
+  const updateGeometryObject = useMathCanvasStore((s) => s.updateGeometryObject);
+  const [value, setValue] = useState("");
+  const [error, setError] = useState<string | null>(null);
+
+  const equation = useMemo(() => geometryEquation(obj), [obj]);
+
+  useEffect(() => {
+    setValue(equation?.equation ?? "");
+    setError(null);
+  }, [equation]);
+
+  function handleApply() {
+    if (obj.type === "point") return;
+    const result = parseGeometryEquation(obj, value);
+    if (!result.ok) {
+      setError(result.error ?? "解析失败");
+      return;
+    }
+    updateGeometryObject(obj.id, result.patch ?? {});
+    setError(null);
+  }
+
+  return (
+    <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
+      <div className="mb-2 flex items-center gap-2 text-sm font-medium text-slate-700">
+        <span className="h-1.5 w-1.5 rounded-full bg-primary-500" />
+        方程
+      </div>
+      {obj.type === "point" ? (
+        <p className="text-xs text-slate-500">
+          点 {obj.label}：({fmtNum(obj.x ?? 0)}, {fmtNum(obj.y ?? 0)})
+        </p>
+      ) : equation ? (
+        <>
+          <p className="font-mono text-xs text-slate-700">{equation.equation}</p>
+          <div className="mt-2 flex items-center gap-2">
+            <input
+              type="text"
+              value={value}
+              onChange={(e) => {
+                setValue(e.target.value);
+                setError(null);
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") handleApply();
+              }}
+              placeholder="如 y = 2x + 1 或 (x-1)^2+(y-2)^2=9"
+              className="min-w-0 flex-1 rounded-md border border-slate-300 px-2 py-1 font-mono text-xs outline-none focus:border-primary-500"
+            />
+            <button
+              type="button"
+              onClick={handleApply}
+              className="shrink-0 rounded-md bg-primary-600 px-3 py-1 text-xs font-medium text-white transition-colors hover:bg-primary-700"
+            >
+              更新
+            </button>
+          </div>
+          {error ? <p className="mt-1.5 text-xs text-red-600">{error}</p> : null}
+          <p className="mt-1.5 text-[10px] leading-relaxed text-slate-400">
+            支持格式：直线 y = kx + b / x = c；圆 (x-a)^2 + (y-b)^2 = r^2。
+          </p>
+        </>
+      ) : null}
+    </div>
+  );
 }
 
 function TranslationSection({ expression }: { expression: MathExpression }) {
