@@ -189,7 +189,7 @@ export function RightPanel() {
               <span className="text-slate-600">显示对象</span>
             </label>
             <div className="mt-3 space-y-2 text-xs text-slate-600">
-              <p>在画布上拖动该对象可整体平移，数据与方程将随之更新。</p>
+              <p>使用「平移」工具在画布上拖动该对象可整体平移，数据与方程将随之更新。</p>
             </div>
             <GeometryEquationEditor obj={selectedGeometry} />
           </section>
@@ -249,6 +249,44 @@ export function RightPanel() {
                       {option.label}
                     </button>
                   ))}
+                </div>
+                <div className="mt-2">
+                  <label className="flex items-center gap-2">
+                    <span className="shrink-0 text-xs text-slate-500">自定义（宽:高）</span>
+                    <input
+                      type="range"
+                      min="0.25"
+                      max="4"
+                      step="0.05"
+                      value={
+                        canvasSettings.canvasRatio === "custom" ? canvasSettings.customRatio : 1.6
+                      }
+                      onChange={(e) => {
+                        const v = Number(e.target.value);
+                        updateCanvasSettings({ canvasRatio: "custom", customRatio: v });
+                      }}
+                      className="min-w-0 flex-1"
+                    />
+                    <span className="w-10 shrink-0 text-right font-mono text-xs text-slate-600">
+                      {canvasSettings.canvasRatio === "custom"
+                        ? Number(canvasSettings.customRatio.toFixed(2))
+                        : "—"}
+                    </span>
+                  </label>
+                </div>
+                <div className="mt-2 flex items-center justify-between">
+                  <span className="text-xs text-slate-500">两坐标轴单位长度 1:1</span>
+                  <button
+                    type="button"
+                    onClick={() => updateCanvasSettings({ canvasRatio: "1:1" })}
+                    className={`rounded-md px-3 py-1 text-xs transition-colors ${
+                      canvasSettings.canvasRatio === "1:1"
+                        ? "bg-primary-600 text-white"
+                        : "border border-slate-300 text-slate-600 hover:border-primary-300 hover:text-primary-700"
+                    }`}
+                  >
+                    设为 1:1
+                  </button>
                 </div>
               </div>
             </div>

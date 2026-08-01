@@ -6,7 +6,7 @@ import type { ToolId } from "@/types";
 const TOOLS: { id: ToolId; label: string; title: string }[] = [
   { id: "select", label: "选择", title: "选择对象" },
   { id: "pan", label: "拖动", title: "拖动画布" },
-  { id: "translate", label: "平移", title: "拖动函数平移图像" },
+  { id: "translate", label: "平移", title: "拖动函数或几何图形平移" },
   { id: "add-point", label: "点", title: "添加点" },
   { id: "add-line", label: "线", title: "添加直线" },
   { id: "add-circle", label: "圆", title: "添加圆" },

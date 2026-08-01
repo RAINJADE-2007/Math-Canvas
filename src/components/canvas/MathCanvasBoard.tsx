@@ -5,7 +5,7 @@ import type JXG from "jsxgraph";
 import "@/styles/jsxgraph.css";
 import { useMathCanvasStore, uid } from "@/store/useMathCanvasStore";
 import { colorForIndex } from "@/constants/colors";
-import { CANVAS_RATIO_VALUE } from "@/constants/canvas";
+import { resolveCanvasRatio } from "@/constants/canvas";
 import { createSafeFunction } from "@/math-engine/core/evaluator/evaluator";
 import type { SafeFunction } from "@/math-engine/core/evaluator/evaluator";
 import { sampleFunction } from "@/math-engine/core/evaluator/sampler";
@@ -198,6 +198,8 @@ const derivativeVisibility = useMathCanvasStore((s) => s.derivativeVisibility);
   const showLabels = useMathCanvasStore((s) => s.canvasSettings.showLabels);
   const showMonotonicityHint = useMathCanvasStore((s) => s.canvasSettings.showMonotonicityHint);
   const canvasRatio = useMathCanvasStore((s) => s.canvasSettings.canvasRatio);
+  const customRatio = useMathCanvasStore((s) => s.canvasSettings.customRatio);
+  const updateCanvasSettings = useMathCanvasStore((s) => s.updateCanvasSettings);
   const viewVersion = useMathCanvasStore((s) => s.canvasSettings.viewVersion);
   const activeTool = useMathCanvasStore((s) => s.activeTool);
   const pinnedData = usePinnedPointsData();
@@ -208,7 +210,7 @@ const derivativeVisibility = useMathCanvasStore((s) => s.derivativeVisibility);
     const updateSize = () => {
       const rect = wrapper.getBoundingClientRect();
       if (rect.width < 2 || rect.height < 2) return;
-      const ratio = CANVAS_RATIO_VALUE[canvasRatio];
+      const ratio = resolveCanvasRatio(canvasRatio, customRatio);
       if (ratio === null) {
         setCanvasSize({ w: rect.width, h: rect.height });
         return;
@@ -224,7 +226,7 @@ const derivativeVisibility = useMathCanvasStore((s) => s.derivativeVisibility);
     const ro = new ResizeObserver(updateSize);
     ro.observe(wrapper);
     return () => ro.disconnect();
-  }, [canvasRatio]);
+  }, [canvasRatio, customRatio]);
 
   useEffect(() => {
     let cancelled = false;
@@ -955,6 +957,18 @@ const derivativeVisibility = useMathCanvasStore((s) => s.derivativeVisibility);
             >
               适配
             </button>
+            <button
+              type="button"
+              title="将两坐标轴单位长度调整为 1:1（正方形画布）"
+              onClick={() => updateCanvasSettings({ canvasRatio: "1:1" })}
+              className={`rounded-md px-2 py-1 text-xs font-medium transition-colors ${
+                canvasRatio === "1:1"
+                  ? "bg-primary-600 text-white"
+                  : "text-slate-600 hover:bg-primary-50 hover:text-primary-700"
+              }`}
+            >
+              1:1
+            </button>
             <span className="w-11 text-center font-mono text-xs text-slate-600">{viewInfo.level}%</span>
           </div>
           <div className="rounded-md bg-white/85 px-2 py-0.5 font-mono text-[10px] text-slate-500">
@@ -1341,7 +1355,7 @@ function bindGeometryDown(board: Board, controller: BoardController, el: El, g: 
     el.on("down", (evt) => {
       const st = useMathCanvasStore.getState();
       st.selectObject(g.id);
-      if (st.activeTool === "select") {
+      if (st.activeTool === "translate") {
         try {
           const coords = board.getUsrCoordsOfMouse(evt as MouseEvent);
           if (coords) {

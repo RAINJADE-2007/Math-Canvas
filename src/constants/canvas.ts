@@ -15,5 +15,13 @@ export const CANVAS_RATIO_VALUE: Record<CanvasRatio, number | null> = {
   "16:9": 16 / 9,
   "3:4": 3 / 4,
   "9:16": 9 / 16,
+  custom: null,
   fill: null,
 };
+
+export function resolveCanvasRatio(ratio: CanvasRatio, custom: number): number | null {
+  if (ratio === "custom") {
+    return Number.isFinite(custom) && custom > 0 ? custom : 1;
+  }
+  return CANVAS_RATIO_VALUE[ratio];
+}

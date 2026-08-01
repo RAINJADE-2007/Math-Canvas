@@ -43,6 +43,7 @@ function defaultCanvasSettings(): CanvasSettings {
     showLabels: true,
     showMonotonicityHint: false,
     canvasRatio: "1:1",
+    customRatio: 1.6,
     viewVersion: 0,
   };
 }
