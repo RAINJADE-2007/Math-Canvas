@@ -147,6 +147,8 @@ interface MathCanvasActions {
   setParameterValue: (name: string, value: number) => void;
   resetParameters: () => void;
 
+  setExpressionTranslation: (id: string, translation: { dx: number; dy: number }) => void;
+
   setDerivativeResult: (expressionId: string, result: DerivativeResult) => void;
   removeDerivativeResult: (expressionId: string) => void;
   toggleDerivative: (expressionId: string) => void;
@@ -400,6 +402,13 @@ export const useMathCanvasStore = create<MathCanvasStore>()(
           }
           return { ...withHistory(state), parameters };
         }),
+
+      setExpressionTranslation: (id, translation) =>
+        set((state) => ({
+          expressions: state.expressions.map((e) =>
+            e.id === id ? { ...e, translation, updatedAt: Date.now() } : e,
+          ),
+        })),
 
       setDerivativeResult: (expressionId, result) =>
         set((state) => ({

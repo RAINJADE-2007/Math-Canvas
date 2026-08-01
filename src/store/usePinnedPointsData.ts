@@ -13,7 +13,7 @@ export interface PinnedPointInfo {
   derivativeValid: boolean;
 }
 
-function makeNumericFn(
+function makeRawNumericFn(
   expression: MathExpression,
   parameters: Record<string, MathParameter>,
 ): (x: number) => number {
@@ -26,28 +26,44 @@ function makeNumericFn(
   return (x: number) => fn.evaluate(x, paramValues);
 }
 
+function makeNumericFn(
+  expression: MathExpression,
+  parameters: Record<string, MathParameter>,
+): (x: number) => number {
+  const raw = makeRawNumericFn(expression, parameters);
+  const dx = expression.translation?.dx ?? 0;
+  const dy = expression.translation?.dy ?? 0;
+  if (dx === 0 && dy === 0) return raw;
+  return (x: number) => {
+    const v = raw(x - dx);
+    return Number.isFinite(v) ? v + dy : v;
+  };
+}
+
 export function buildPinnedPointInfos(
   pinnedPoints: PinnedPoint[],
   expressions: MathExpression[],
   parameters: Record<string, MathParameter>,
   derivativeResults: Record<string, DerivativeResult>,
 ): PinnedPointInfo[] {
-  const fnCache = new Map<string, (x: number) => number>();
+  const rawFnCache = new Map<string, (x: number) => number>();
   const result: PinnedPointInfo[] = [];
   for (const point of pinnedPoints) {
     const expression = expressions.find((e) => e.id === point.expressionId);
     if (!expression) continue;
-    let numericFn = fnCache.get(expression.id);
+    let numericFn = rawFnCache.get(expression.id);
     if (!numericFn) {
       numericFn = makeNumericFn(expression, parameters);
-      fnCache.set(expression.id, numericFn);
+      rawFnCache.set(expression.id, numericFn);
     }
     const y = numericFn(point.x);
     let derivative: number | undefined;
     let derivativeValid = false;
     if (derivativeResults[expression.id]) {
-      const computed = computeDerivative({ expression: expression.normalizedExpression, fn: numericFn });
-      const dv = computed.derivativeAt(point.x);
+      const rawFn = makeRawNumericFn(expression, parameters);
+      const computed = computeDerivative({ expression: expression.normalizedExpression, fn: rawFn });
+      const dx = expression.translation?.dx ?? 0;
+      const dv = computed.derivativeAt(point.x - dx);
       if (Number.isFinite(dv)) {
         derivative = dv;
         derivativeValid = true;

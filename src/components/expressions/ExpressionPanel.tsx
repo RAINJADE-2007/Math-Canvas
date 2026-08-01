@@ -153,6 +153,9 @@ export function ExpressionPanel() {
                   {hasDerivative ? (
                     <span className="rounded bg-violet-100 px-1.5 py-0.5 text-xs text-violet-700">导数</span>
                   ) : null}
+                  {expr.translation && (expr.translation.dx !== 0 || expr.translation.dy !== 0) ? (
+                    <span className="rounded bg-primary-100 px-1.5 py-0.5 text-xs text-primary-700">平移</span>
+                  ) : null}
                   <div className="ml-auto flex items-center gap-1">
                     <button
                       type="button"

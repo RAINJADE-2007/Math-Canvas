@@ -29,6 +29,7 @@ export type ProblemType =
 export type ToolId =
   | "select"
   | "pan"
+  | "translate"
   | "add-point"
   | "add-line"
   | "add-circle"
@@ -44,6 +45,10 @@ export interface MathExpression {
   color: string;
   visible: boolean;
   parameters: string[];
+  translation?: {
+    dx: number;
+    dy: number;
+  };
   domain?: {
     min: number;
     max: number;

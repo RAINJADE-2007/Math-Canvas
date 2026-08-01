@@ -1,11 +1,13 @@
 "use client";
 
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMathCanvasStore } from "@/store/useMathCanvasStore";
 import { useHoverPointStore } from "@/store/useHoverPointStore";
 import { usePinnedPointsData } from "@/store/usePinnedPointsData";
 import { analyzeMiddleSchoolFunction } from "@/math-engine/middle-school/functions/analyze";
+import { describeTranslation, translateFunction } from "@/math-engine/middle-school/functions/translate";
 import { LatexView } from "@/components/common/LatexView";
+import type { MathExpression } from "@/types";
 
 export function RightPanel() {
   const selectedObjectId = useMathCanvasStore((s) => s.selectedObjectId);
@@ -118,6 +120,8 @@ export function RightPanel() {
                 color={selectedExpression.color}
                 hasDerivative={!!derivativeResults[selectedExpression.id]}
               />
+
+              <TranslationSection expression={selectedExpression} />
 
               <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
                 <div className="mb-2 flex items-center gap-2 text-sm font-medium text-slate-700">
@@ -290,4 +294,131 @@ function PointDataSection({
 function fmtNum(n: number): string {
   if (!Number.isFinite(n)) return "—";
   return Number.isInteger(n) ? String(n) : n.toFixed(3);
+}
+
+function TranslationSection({ expression }: { expression: MathExpression }) {
+  const setExpressionTranslation = useMathCanvasStore((s) => s.setExpressionTranslation);
+  const addExpression = useMathCanvasStore((s) => s.addExpression);
+  const [hValue, setHValue] = useState("");
+  const [kValue, setKValue] = useState("");
+  const [copied, setCopied] = useState(false);
+  const [applyError, setApplyError] = useState<string | null>(null);
+
+  const dx = expression.translation?.dx ?? 0;
+  const dy = expression.translation?.dy ?? 0;
+  const hasTranslation = dx !== 0 || dy !== 0;
+
+  useEffect(() => {
+    setHValue(String(dx));
+    setKValue(String(dy));
+  }, [dx, dy]);
+
+  const result = useMemo(
+    () => translateFunction(expression.normalizedExpression, dx, dy),
+    [expression.normalizedExpression, dx, dy],
+  );
+
+  function updateTranslation(nextDx: number, nextDy: number) {
+    setExpressionTranslation(expression.id, {
+      dx: Number.isFinite(nextDx) ? nextDx : 0,
+      dy: Number.isFinite(nextDy) ? nextDy : 0,
+    });
+  }
+
+  async function handleCopy() {
+    if (!result.ok || !result.expression) return;
+    try {
+      await navigator.clipboard.writeText(result.expression);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1500);
+    } catch {
+      /* ignore */
+    }
+  }
+
+  function handleApply() {
+    setApplyError(null);
+    if (!result.ok) {
+      setApplyError(result.error ?? "无法生成解析式");
+      return;
+    }
+    const res = addExpression(result.expression);
+    if (!res.ok) {
+      setApplyError(res.error ?? "添加失败");
+    }
+  }
+
+  return (
+    <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+      <div className="mb-2 flex items-center gap-2 text-sm font-medium text-slate-700">
+        <span className="h-1.5 w-1.5 rounded-full bg-primary-500" />
+        图像平移
+      </div>
+      <div className="flex flex-wrap items-center gap-3">
+        <label className="flex items-center gap-1.5 text-xs text-slate-500">
+          水平
+          <input
+            type="number"
+            step="0.1"
+            value={hValue}
+            onChange={(e) => {
+              setHValue(e.target.value);
+              updateTranslation(parseFloat(e.target.value), dy);
+            }}
+            className="w-20 rounded border border-slate-300 px-2 py-1 font-mono text-xs outline-none focus:border-primary-500"
+          />
+        </label>
+        <label className="flex items-center gap-1.5 text-xs text-slate-500">
+          垂直
+          <input
+            type="number"
+            step="0.1"
+            value={kValue}
+            onChange={(e) => {
+              setKValue(e.target.value);
+              updateTranslation(dx, parseFloat(e.target.value));
+            }}
+            className="w-20 rounded border border-slate-300 px-2 py-1 font-mono text-xs outline-none focus:border-primary-500"
+          />
+        </label>
+      </div>
+      <p className="mt-2 text-xs text-slate-500">{describeTranslation(dx, dy)}</p>
+      <div className="mt-2 rounded bg-white p-2">
+        <p className="text-xs text-slate-400">平移后的解析式：</p>
+        <div className="mt-1 text-sm">
+          <LatexView latex={result.latex} />
+        </div>
+        <p className="mt-1 font-mono text-xs text-slate-600">y = {result.expression || "—"}</p>
+      </div>
+      <div className="mt-2 flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          onClick={handleApply}
+          className="rounded-md bg-primary-600 px-3 py-1 text-xs font-medium text-white transition-colors hover:bg-primary-700"
+        >
+          应用为新函数
+        </button>
+        <button
+          type="button"
+          onClick={handleCopy}
+          className="rounded-md border border-slate-300 px-3 py-1 text-xs text-slate-600 hover:border-primary-300 hover:text-primary-700"
+        >
+          {copied ? "已复制" : "复制解析式"}
+        </button>
+        {hasTranslation ? (
+          <button
+            type="button"
+            onClick={() => setExpressionTranslation(expression.id, { dx: 0, dy: 0 })}
+            className="rounded-md px-3 py-1 text-xs text-slate-500 hover:bg-slate-100"
+          >
+            重置
+          </button>
+        ) : null}
+      </div>
+      {applyError ? <p className="mt-2 text-xs text-red-600">{applyError}</p> : null}
+      <p className="mt-2 text-xs text-slate-400">
+        使用工具栏「平移」工具拖动该函数曲线即可实时平移图像。
+      </p>
+    </div>
+  );
 }

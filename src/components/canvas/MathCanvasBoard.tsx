@@ -5,6 +5,7 @@ import type JXG from "jsxgraph";
 import "@/styles/jsxgraph.css";
 import { useMathCanvasStore } from "@/store/useMathCanvasStore";
 import { createSafeFunction } from "@/math-engine/core/evaluator/evaluator";
+import type { SafeFunction } from "@/math-engine/core/evaluator/evaluator";
 import { sampleFunction } from "@/math-engine/core/evaluator/sampler";
 import type { SampleChunk } from "@/math-engine/core/evaluator/sampler";
 import { computeDerivative } from "@/math-engine/calculus-intro/derivative/differentiate";
@@ -22,7 +23,7 @@ type JXGNamespace = typeof JXG;
 const DERIVATIVE_COLOR = "#7c3aed";
 const SAMPLE_STEPS = 800;
 
-function makeNumericFn(expression: MathExpression, parameters: Record<string, MathParameter>): NumericFunction {
+function makeRawNumericFn(expression: MathExpression, parameters: Record<string, MathParameter>): NumericFunction {
   const fn = createSafeFunction(expression.normalizedExpression);
   const paramValues: Record<string, number> = {};
   for (const p of expression.parameters) {
@@ -30,6 +31,40 @@ function makeNumericFn(expression: MathExpression, parameters: Record<string, Ma
     if (typeof value === "number") paramValues[p] = value;
   }
   return (x: number) => fn.evaluate(x, paramValues);
+}
+
+function makeNumericFn(expression: MathExpression, parameters: Record<string, MathParameter>): NumericFunction {
+  const raw = makeRawNumericFn(expression, parameters);
+  const dx = expression.translation?.dx ?? 0;
+  const dy = expression.translation?.dy ?? 0;
+  if (dx === 0 && dy === 0) return raw;
+  return (x: number) => {
+    const v = raw(x - dx);
+    return Number.isFinite(v) ? v + dy : v;
+  };
+}
+
+function makeTranslatedSafeFunction(
+  expression: MathExpression,
+  parameters: Record<string, MathParameter>,
+): SafeFunction {
+  const base = createSafeFunction(expression.normalizedExpression);
+  const paramValues: Record<string, number> = {};
+  for (const p of expression.parameters) {
+    const value = parameters[p]?.value;
+    if (typeof value === "number") paramValues[p] = value;
+  }
+  const dx = expression.translation?.dx ?? 0;
+  const dy = expression.translation?.dy ?? 0;
+  return {
+    node: base.node,
+    expression: base.expression,
+    evaluate: (x: number, params?: Record<string, number>) => {
+      const v = base.evaluate(x - dx, params ?? paramValues);
+      return Number.isFinite(v) ? v + dy : v;
+    },
+    toString: () => base.toString(),
+  };
 }
 
 function clearElements(board: Board, elements: El[]): void {
@@ -70,6 +105,13 @@ interface BoardController {
   coordinateText: JXG.Text | null;
   lastCurveSignature: string;
   dragging: boolean;
+  translateDrag: {
+    expressionId: string;
+    startUserX: number;
+    startUserY: number;
+    baseDx: number;
+    baseDy: number;
+  } | null;
   fns: Map<string, NumericFunction>;
   derivativeFns: Map<string, (x: number) => number>;
   redraw: () => void;
@@ -99,7 +141,7 @@ function curveSignature(): string {
     .map((k) => `${k}=${s.parameters[k].value}`)
     .join(",");
   const exprs = s.expressions
-    .map((e) => `${e.id}|${e.normalizedExpression}|${e.visible}|${e.color}`)
+    .map((e) => `${e.id}|${e.normalizedExpression}|${e.visible}|${e.color}|${e.translation?.dx ?? 0}|${e.translation?.dy ?? 0}`)
     .join(";");
   const derivs = Object.keys(s.derivativeResults)
     .sort()
@@ -233,6 +275,7 @@ const derivativeVisibility = useMathCanvasStore((s) => s.derivativeVisibility);
 
       const containerEl = containerRef.current;
       let panState: { startX: number; startY: number; bbox: number[] } | null = null;
+      let lastTranslateTime = 0;
 
       const hasDraggableUnder = (scrX: number, scrY: number): boolean => {
         const list = (board as unknown as { objectsList: unknown[] }).objectsList;
@@ -259,6 +302,8 @@ const derivativeVisibility = useMathCanvasStore((s) => s.derivativeVisibility);
 
       const onPointerDown = (e: PointerEvent) => {
         if (e.button !== 0) return;
+        if (controller?.translateDrag) return;
+        if (useMathCanvasStore.getState().activeTool === "translate") return;
         const boardAny = board as unknown as { getMousePosition?: (ev: PointerEvent) => [number, number] };
         let scr: [number, number] | undefined;
         try {
@@ -278,6 +323,25 @@ const derivativeVisibility = useMathCanvasStore((s) => s.derivativeVisibility);
       };
 
       const onPointerMove = (e: PointerEvent) => {
+        const translateDrag = controller?.translateDrag;
+        if (translateDrag) {
+          const now = Date.now();
+          if (now - lastTranslateTime >= 40) {
+            lastTranslateTime = now;
+            try {
+              const coords = controller!.board.getUsrCoordsOfMouse(e as MouseEvent);
+              if (coords) {
+                const dx = translateDrag.baseDx + (coords[0] - translateDrag.startUserX);
+                const dy = translateDrag.baseDy + (coords[1] - translateDrag.startUserY);
+                useMathCanvasStore.getState().setExpressionTranslation(translateDrag.expressionId, { dx, dy });
+              }
+            } catch {
+              /* ignore */
+            }
+          }
+          e.preventDefault();
+          return;
+        }
         if (!panState) return;
         const rect = containerEl.getBoundingClientRect();
         if (rect.width === 0 || rect.height === 0) return;
@@ -297,6 +361,21 @@ const derivativeVisibility = useMathCanvasStore((s) => s.derivativeVisibility);
       };
 
       const onPointerUp = () => {
+        if (controller?.translateDrag) {
+          controller.translateDrag = null;
+          lastTranslateTime = 0;
+          try {
+            containerEl.style.cursor = "";
+          } catch {
+            /* ignore */
+          }
+          try {
+            controller.redraw();
+          } catch {
+            /* ignore */
+          }
+          return;
+        }
         if (!panState) return;
         panState = null;
         try {
@@ -337,6 +416,7 @@ const derivativeVisibility = useMathCanvasStore((s) => s.derivativeVisibility);
         coordinateText,
         lastCurveSignature: "",
         dragging: false,
+        translateDrag: null,
         fns: new Map(),
         derivativeFns: new Map(),
         redraw: () => {
@@ -432,13 +512,8 @@ const derivativeVisibility = useMathCanvasStore((s) => s.derivativeVisibility);
           for (const expr of s.expressions) {
             if (!expr.visible) continue;
             const numericFn = makeNumericFn(expr, s.parameters);
-            const paramValues: Record<string, number> = {};
-            for (const p of expr.parameters) {
-              const v = s.parameters[p]?.value;
-              if (typeof v === "number") paramValues[p] = v;
-            }
-            const fn = createSafeFunction(expr.normalizedExpression);
-            const sampled = sampleFunction(fn, { min: xMin, max: xMax, steps: SAMPLE_STEPS }, paramValues);
+            const safeFn = makeTranslatedSafeFunction(expr, s.parameters);
+            const sampled = sampleFunction(safeFn, { min: xMin, max: xMax, steps: SAMPLE_STEPS });
 
             const elements: El[] = [];
             for (const chunk of sampled.chunks) {
@@ -454,6 +529,24 @@ const derivativeVisibility = useMathCanvasStore((s) => s.derivativeVisibility);
                 el.on("down", (evt) => {
                   const st = useMathCanvasStore.getState();
                   st.selectObject(expr.id);
+                  if (st.activeTool === "translate") {
+                    try {
+                      const coords = board.getUsrCoordsOfMouse(evt as MouseEvent);
+                      if (coords) {
+                        controller!.translateDrag = {
+                          expressionId: expr.id,
+                          startUserX: coords[0],
+                          startUserY: coords[1],
+                          baseDx: expr.translation?.dx ?? 0,
+                          baseDy: expr.translation?.dy ?? 0,
+                        };
+                        containerEl.style.cursor = "grabbing";
+                      }
+                    } catch {
+                      /* ignore */
+                    }
+                    return;
+                  }
                   try {
                     const coords = board.getUsrCoordsOfMouse(evt as MouseEvent);
                     if (coords && Number.isFinite(coords[0])) {
@@ -501,7 +594,12 @@ const derivativeVisibility = useMathCanvasStore((s) => s.derivativeVisibility);
               if (typeof v === "number") paramValues[p] = v;
             }
             const dFn = createSafeFunction(derivative.derivativeExpression);
-            const sampled = sampleFunction(dFn, { min: xMin, max: xMax, steps: SAMPLE_STEPS }, paramValues);
+            const dx = expr.translation?.dx ?? 0;
+            const dSafe: SafeFunction = {
+              ...dFn,
+              evaluate: (x: number, params?: Record<string, number>) => dFn.evaluate(x - dx, params ?? {}),
+            };
+            const sampled = sampleFunction(dSafe, { min: xMin, max: xMax, steps: SAMPLE_STEPS }, paramValues);
             for (const chunk of sampled.chunks) {
               const el = board.create("curve", [chunk.xs, chunk.ys], {
                 strokeColor: DERIVATIVE_COLOR,
@@ -888,10 +986,12 @@ function drawCriticalPoints(board: Board, controller: BoardController, s: Return
     if (s.derivativeVisibility[expr.id]?.criticalPoints === false) continue;
     const fn = controller.fns.get(expr.id);
     if (!fn) continue;
+    const dx = expr.translation?.dx ?? 0;
     for (const cp of derivative.criticalPoints) {
-      const y = fn(cp);
+      const x = cp + dx;
+      const y = fn(x);
       if (!Number.isFinite(y)) continue;
-      const el = board.create("point", [cp, y], {
+      const el = board.create("point", [x, y], {
         size: 2.5,
         face: "cross",
         strokeColor: "#475569",
@@ -900,7 +1000,7 @@ function drawCriticalPoints(board: Board, controller: BoardController, s: Return
 
       if (s.canvasSettings.showMonotonicityHint) {
         try {
-          const text = board.create("text", [cp, y, `${cp.toFixed(2)}`], {
+          const text = board.create("text", [x, y, `${x.toFixed(2)}`], {
             fontSize: 10,
             strokeColor: "#475569",
             anchorY: "bottom",
@@ -939,10 +1039,12 @@ function derivativeAtFor(board: Board, controller: BoardController, exprId: stri
   const s = useMathCanvasStore.getState();
   const expr = s.expressions.find((e) => e.id === exprId);
   if (!expr) return undefined;
-  const numericFn = makeNumericFn(expr, s.parameters);
-  const computed = computeDerivative({ expression: expr.normalizedExpression, fn: numericFn });
-  controller.derivativeFns.set(exprId, computed.derivativeAt);
-  return computed.derivativeAt;
+  const rawFn = makeRawNumericFn(expr, s.parameters);
+  const computed = computeDerivative({ expression: expr.normalizedExpression, fn: rawFn });
+  const dx = expr.translation?.dx ?? 0;
+  const derivativeAt = dx === 0 ? computed.derivativeAt : (x: number) => computed.derivativeAt(x - dx);
+  controller.derivativeFns.set(exprId, derivativeAt);
+  return derivativeAt;
 }
 
 function drawTangents(board: Board, controller: BoardController): void {
@@ -977,6 +1079,9 @@ function drawTangents(board: Board, controller: BoardController): void {
 
     const derivativeAt = derivativeAtFor(board, controller, expr.id);
     const secant = derivative.secant;
+    const baseY = Number.isFinite(curveInfo.numericFn(tangent.x)) ? curveInfo.numericFn(tangent.x) : tangent.y;
+    const baseSlope =
+      derivativeAt && Number.isFinite(derivativeAt(tangent.x)) ? derivativeAt(tangent.x) : tangent.slope;
 
     let tangentInfo = controller.tangentElements.get(expr.id);
     const curveEl = findCurveForX(curveInfo, tangent.x);
@@ -991,7 +1096,7 @@ function drawTangents(board: Board, controller: BoardController): void {
       let glider: JXG.Point | undefined;
       if (curveEl) {
         try {
-          glider = board.create("glider", [tangent.x, tangent.y, curveEl], {
+          glider = board.create("glider", [tangent.x, baseY, curveEl], {
             name: "P",
             size: 4,
             face: "circle",
@@ -1025,7 +1130,7 @@ function drawTangents(board: Board, controller: BoardController): void {
         }
       }
 
-      const tangentLine = board.create("line", [[tangent.x, tangent.y], [tangent.x + 1, tangent.y + (Number.isFinite(tangent.slope) ? tangent.slope : 0)]], {
+      const tangentLine = board.create("line", [[tangent.x, baseY], [tangent.x + 1, baseY + (Number.isFinite(baseSlope) ? baseSlope : 0)]], {
         strokeColor: "#dc2626",
         strokeWidth: 2,
         dash: 2,
@@ -1034,7 +1139,7 @@ function drawTangents(board: Board, controller: BoardController): void {
       }) as JXG.Line;
 
       const secantLine = showSecant
-        ? (board.create("line", [[tangent.x, tangent.y], [secant?.x2 ?? tangent.x + 2, secant?.y2 ?? tangent.y]], {
+        ? (board.create("line", [[tangent.x, baseY], [secant?.x2 ?? tangent.x + 2, secant?.y2 ?? baseY]], {
             strokeColor: "#d97706",
             strokeWidth: 1.8,
             name: "割线",
