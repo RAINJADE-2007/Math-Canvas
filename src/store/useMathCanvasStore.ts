@@ -12,6 +12,7 @@ import type {
   MathDataset,
   MathExpression,
   MathParameter,
+  PinnedPoint,
   SavedMathCanvasDocument,
   SolutionRecord,
   SubjectId,
@@ -64,6 +65,7 @@ function defaultState(): Omit<MathCanvasState, "past" | "future"> {
     expressions: [],
     geometryObjects: [],
     datasets: [],
+    pinnedPoints: [],
     parameters: {},
     derivativeResults: {},
     derivativeVisibility: {},
@@ -136,6 +138,11 @@ interface MathCanvasActions {
 
   addDataset: (dataset: MathDataset) => void;
   removeDataset: (id: string) => void;
+
+  addPinnedPoint: (expressionId: string, x: number) => void;
+  updatePinnedPoint: (id: string, patch: Partial<PinnedPoint>) => void;
+  removePinnedPoint: (id: string) => void;
+  clearPinnedPoints: () => void;
 
   setParameterValue: (name: string, value: number) => void;
   resetParameters: () => void;
@@ -289,6 +296,7 @@ export const useMathCanvasStore = create<MathCanvasStore>()(
           delete derivativeVisibility[id];
           next.derivativeVisibility = derivativeVisibility;
           if (state.selectedObjectId === id) next.selectedObjectId = null;
+          next.pinnedPoints = state.pinnedPoints.filter((p) => p.expressionId !== id);
           return next;
         }),
 
@@ -344,6 +352,33 @@ export const useMathCanvasStore = create<MathCanvasStore>()(
           ...withHistory(state),
           datasets: state.datasets.filter((d) => d.id !== id),
         })),
+
+      addPinnedPoint: (expressionId, x) =>
+        set((state) => {
+          if (!Number.isFinite(x)) return {};
+          const expression = state.expressions.find((e) => e.id === expressionId);
+          if (!expression) return {};
+          const duplicate = state.pinnedPoints.some(
+            (p) => p.expressionId === expressionId && Math.abs(p.x - x) < 0.08,
+          );
+          if (duplicate) return {};
+          const point: PinnedPoint = { id: uid("pt"), expressionId, x, createdAt: Date.now() };
+          return { ...withHistory(state), pinnedPoints: [...state.pinnedPoints, point] };
+        }),
+
+      updatePinnedPoint: (id, patch) =>
+        set((state) => ({
+          pinnedPoints: state.pinnedPoints.map((p) => (p.id === id ? { ...p, ...patch } : p)),
+        })),
+
+      removePinnedPoint: (id) =>
+        set((state) => ({
+          ...withHistory(state),
+          pinnedPoints: state.pinnedPoints.filter((p) => p.id !== id),
+        })),
+
+      clearPinnedPoints: () =>
+        set((state) => ({ ...withHistory(state), pinnedPoints: [] })),
 
       setParameterValue: (name, value) =>
         set((state) => {

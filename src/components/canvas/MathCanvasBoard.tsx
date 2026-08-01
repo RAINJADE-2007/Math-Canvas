@@ -13,6 +13,7 @@ import type { DerivativeResult, GeometryObject, MathExpression, MathParameter } 
 import type { NumericFunction } from "@/math-engine/calculus-intro/derivative/numericalDerivative";
 import { useHoverPointStore } from "@/store/useHoverPointStore";
 import type { HoverValue } from "@/store/useHoverPointStore";
+import { usePinnedPointsData } from "@/store/usePinnedPointsData";
 
 type Board = JXG.Board;
 type El = JXG.GeometryElement;
@@ -65,6 +66,7 @@ interface BoardController {
   geometryElements: El[];
   criticalElements: El[];
   tangentElements: Map<string, TangentInfo>;
+  pinnedPointElements: Map<string, El[]>;
   coordinateText: JXG.Text | null;
   lastCurveSignature: string;
   dragging: boolean;
@@ -111,8 +113,9 @@ function curveSignature(): string {
     })
     .join(";");
   const geo = s.geometryObjects.map((g) => `${g.id}|${g.visible}|${g.type}|${g.x ?? ""}|${g.y ?? ""}|${g.x1 ?? ""}|${g.y1 ?? ""}|${g.x2 ?? ""}|${g.y2 ?? ""}|${g.centerX ?? ""}|${g.centerY ?? ""}|${g.radius ?? ""}`).join(";");
+  const pinned = s.pinnedPoints.map((p) => `${p.id}|${p.expressionId}|${p.x}`).join(";");
   const settings = `${s.canvasSettings.showGrid}|${s.canvasSettings.showAxes}|${s.canvasSettings.showLabels}|${s.canvasSettings.showMonotonicityHint}`;
-  return `${params}|${exprs}|${derivs}|${derivVis}|${geo}|${settings}`;
+  return `${params}|${exprs}|${derivs}|${derivVis}|${geo}|${pinned}|${settings}`;
 }
 
 export function MathCanvasBoard() {
@@ -127,12 +130,16 @@ export function MathCanvasBoard() {
   const derivativeResults = useMathCanvasStore((s) => s.derivativeResults);
 const derivativeVisibility = useMathCanvasStore((s) => s.derivativeVisibility);
   const geometryObjects = useMathCanvasStore((s) => s.geometryObjects);
+  const pinnedPoints = useMathCanvasStore((s) => s.pinnedPoints);
+  const removePinnedPoint = useMathCanvasStore((s) => s.removePinnedPoint);
+  const clearPinnedPoints = useMathCanvasStore((s) => s.clearPinnedPoints);
   const showGrid = useMathCanvasStore((s) => s.canvasSettings.showGrid);
   const showAxes = useMathCanvasStore((s) => s.canvasSettings.showAxes);
   const showLabels = useMathCanvasStore((s) => s.canvasSettings.showLabels);
   const showMonotonicityHint = useMathCanvasStore((s) => s.canvasSettings.showMonotonicityHint);
   const viewVersion = useMathCanvasStore((s) => s.canvasSettings.viewVersion);
   const activeTool = useMathCanvasStore((s) => s.activeTool);
+  const pinnedData = usePinnedPointsData();
 
   useEffect(() => {
     let cancelled = false;
@@ -326,6 +333,7 @@ const derivativeVisibility = useMathCanvasStore((s) => s.derivativeVisibility);
         geometryElements: [],
         criticalElements: [],
         tangentElements: new Map(),
+        pinnedPointElements: new Map(),
         coordinateText,
         lastCurveSignature: "",
         dragging: false,
@@ -402,6 +410,7 @@ const derivativeVisibility = useMathCanvasStore((s) => s.derivativeVisibility);
           clearElements(board, controller!.derivativeCurves);
           clearElements(board, controller!.geometryElements);
           clearElements(board, controller!.criticalElements);
+          clearPinnedPointElements(board, controller!);
 
           for (const [_id, info] of controller!.curves) {
             for (const el of info.elements) {
@@ -442,8 +451,17 @@ const derivativeVisibility = useMathCanvasStore((s) => s.derivativeVisibility);
                 highlightStrokeWidth: 3,
               }) as El;
               try {
-                el.on("down", () => {
-                  useMathCanvasStore.getState().selectObject(expr.id);
+                el.on("down", (evt) => {
+                  const st = useMathCanvasStore.getState();
+                  st.selectObject(expr.id);
+                  try {
+                    const coords = board.getUsrCoordsOfMouse(evt as MouseEvent);
+                    if (coords && Number.isFinite(coords[0])) {
+                      st.addPinnedPoint(expr.id, coords[0]);
+                    }
+                  } catch {
+                    /* ignore */
+                  }
                 });
               } catch {
                 /* ignore */
@@ -505,6 +523,7 @@ const derivativeVisibility = useMathCanvasStore((s) => s.derivativeVisibility);
 
           drawGeometry(board, controller!, s.geometryObjects, s.canvasSettings.showLabels);
           drawCriticalPoints(board, controller!, s);
+          drawPinnedPoints(board, controller!, s);
         }
 
         drawTangents(board, controller!);
@@ -549,7 +568,7 @@ const derivativeVisibility = useMathCanvasStore((s) => s.derivativeVisibility);
   useEffect(() => {
     if (!ready || !controllerRef.current) return;
     controllerRef.current.redraw();
-  }, [ready, expressions, parameters, derivativeResults, derivativeVisibility, geometryObjects, showGrid, showAxes, showLabels, showMonotonicityHint]);
+  }, [ready, expressions, parameters, derivativeResults, derivativeVisibility, geometryObjects, pinnedPoints, showGrid, showAxes, showLabels, showMonotonicityHint]);
 
   useEffect(() => {
     if (!ready || !controllerRef.current) return;
@@ -611,7 +630,7 @@ const derivativeVisibility = useMathCanvasStore((s) => s.derivativeVisibility);
           </div>
         </div>
       )}
-      <div className="pointer-events-none absolute bottom-3 right-3 z-10 w-64 max-w-[70%] rounded-lg border border-slate-200 bg-white/95 p-3 shadow-card">
+      <div className="pointer-events-none absolute bottom-3 right-3 z-10 w-72 max-w-[80%] rounded-lg border border-slate-200 bg-white/95 p-3 shadow-card">
         <p className="text-xs font-semibold text-slate-500">点的数据</p>
         {hoverData ? (
           <>
@@ -640,6 +659,57 @@ const derivativeVisibility = useMathCanvasStore((s) => s.derivativeVisibility);
         ) : (
           <p className="mt-1 text-xs text-slate-400">将鼠标移动到画布上，查看各点的坐标与函数值。</p>
         )}
+
+        <div className="mt-2 border-t border-slate-100 pt-2">
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-xs font-semibold text-slate-500">
+              已选取的点{pinnedData.length > 0 ? `（${pinnedData.length}）` : ""}
+            </p>
+            {pinnedData.length > 0 ? (
+              <button
+                type="button"
+                onClick={clearPinnedPoints}
+                className="pointer-events-auto rounded px-1.5 py-0.5 text-[10px] text-slate-400 transition-colors hover:bg-red-50 hover:text-red-600"
+              >
+                清空
+              </button>
+            ) : null}
+          </div>
+          {pinnedData.length > 0 ? (
+            <ul className="panel-scroll mt-1 max-h-40 space-y-1 overflow-y-auto">
+              {pinnedData.map((info) => {
+                const p = info.point;
+                return (
+                  <li key={p.id} className="flex items-center gap-1.5 text-xs">
+                    <span
+                      className="h-2 w-2 shrink-0 rounded-full"
+                      style={{ backgroundColor: info.expression.color }}
+                    />
+                    <span className="max-w-[64px] truncate text-slate-500" title={info.expression.rawInput}>
+                      {info.expression.rawInput}
+                    </span>
+                    <span className="font-mono text-slate-700">
+                      ({fmt2(p.x)}, {info.valid ? fmt2(info.y) : "无定义"})
+                    </span>
+                    {info.derivativeValid && info.derivative !== undefined ? (
+                      <span className="font-mono text-violet-600">{"f'="}{fmt2(info.derivative)}</span>
+                    ) : null}
+                    <button
+                      type="button"
+                      title="移除该点"
+                      onClick={() => removePinnedPoint(p.id)}
+                      className="pointer-events-auto ml-auto flex h-4 w-4 shrink-0 items-center justify-center rounded text-slate-400 transition-colors hover:bg-red-50 hover:text-red-600"
+                    >
+                      ×
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          ) : (
+            <p className="mt-1 text-xs text-slate-400">点击曲线可选取该点并固定显示数据，拖动标记可移动。</p>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -648,6 +718,95 @@ const derivativeVisibility = useMathCanvasStore((s) => s.derivativeVisibility);
 function fmt2(n: number): string {
   if (!Number.isFinite(n)) return "—";
   return Number.isInteger(n) ? String(n) : n.toFixed(3);
+}
+
+function clearPinnedPointElements(board: Board, controller: BoardController): void {
+  for (const [_id, elements] of controller.pinnedPointElements) {
+    for (const el of elements) {
+      try {
+        board.removeObject(el);
+      } catch {
+        /* ignore */
+      }
+    }
+  }
+  controller.pinnedPointElements.clear();
+}
+
+function chunkForX(curveInfo: CurveInfo, x: number): SampleChunk | undefined {
+  for (const chunk of curveInfo.chunks) {
+    if (x >= chunk.xs[0] && x <= chunk.xs[chunk.xs.length - 1]) return chunk;
+  }
+  return undefined;
+}
+
+function drawPinnedPoints(
+  board: Board,
+  controller: BoardController,
+  s: ReturnType<typeof useMathCanvasStore.getState>,
+): void {
+  for (const point of s.pinnedPoints) {
+    const expr = s.expressions.find((e) => e.id === point.expressionId);
+    if (!expr || !expr.visible) continue;
+    const curveInfo = controller.curves.get(expr.id);
+    if (!curveInfo) continue;
+    const numericFn = curveInfo.numericFn;
+    const y = numericFn(point.x);
+    if (!Number.isFinite(y)) continue;
+    const chunk = chunkForX(curveInfo, point.x);
+    const curveEl = chunk ? findCurveForX(curveInfo, point.x) : undefined;
+    if (!chunk || !curveEl) continue;
+
+    const elements: El[] = [];
+    let glider: JXG.Point | undefined;
+    try {
+      glider = board.create("glider", [point.x, y, curveEl], {
+        size: 4,
+        face: "circle",
+        strokeColor: expr.color,
+        fillColor: "#ffffff",
+        withLabel: false,
+      }) as JXG.Point;
+      elements.push(glider);
+    } catch {
+      glider = undefined;
+    }
+
+    let text: JXG.Text | undefined;
+    try {
+      text = board.create("text", [point.x, y + 0.45, `(${fmt(point.x)}, ${fmt(y)})`], {
+        fontSize: 10,
+        strokeColor: expr.color,
+        anchorY: "bottom",
+        fixed: false,
+      }) as JXG.Text;
+      elements.push(text);
+    } catch {
+      text = undefined;
+    }
+
+    if (glider) {
+      try {
+        glider.on("drag", () => {
+          const gx = glider?.X ? glider.X() : point.x;
+          if (!Number.isFinite(gx)) return;
+          const gy = numericFn(gx);
+          if (Number.isFinite(gy) && text && text.setText) {
+            text.setText(`(${fmt(gx)}, ${fmt(gy)})`);
+          }
+        });
+        glider.on("up", () => {
+          const gx = glider?.X ? glider.X() : point.x;
+          if (!Number.isFinite(gx)) return;
+          useMathCanvasStore.getState().updatePinnedPoint(point.id, { x: gx });
+        });
+      } catch {
+        /* ignore */
+      }
+    }
+
+    controller.pinnedPointElements.set(point.id, elements);
+  }
 }
 
 function drawGeometry(board: Board, controller: BoardController, geometryObjects: GeometryObject[], showLabels: boolean): void {

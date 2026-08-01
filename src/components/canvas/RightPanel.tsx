@@ -3,6 +3,7 @@
 import { useMemo } from "react";
 import { useMathCanvasStore } from "@/store/useMathCanvasStore";
 import { useHoverPointStore } from "@/store/useHoverPointStore";
+import { usePinnedPointsData } from "@/store/usePinnedPointsData";
 import { analyzeMiddleSchoolFunction } from "@/math-engine/middle-school/functions/analyze";
 import { LatexView } from "@/components/common/LatexView";
 
@@ -17,9 +18,16 @@ export function RightPanel() {
   const toggleExpressionVisibility = useMathCanvasStore((s) => s.toggleExpressionVisibility);
   const toggleGeometryVisibility = useMathCanvasStore((s) => s.toggleGeometryVisibility);
   const derivativeResults = useMathCanvasStore((s) => s.derivativeResults);
+  const removePinnedPoint = useMathCanvasStore((s) => s.removePinnedPoint);
+  const pinnedData = usePinnedPointsData();
 
   const selectedExpression = expressions.find((e) => e.id === selectedObjectId);
   const selectedGeometry = geometryObjects.find((g) => g.id === selectedObjectId);
+
+  const selectedPinnedPoints = useMemo(
+    () => (selectedExpression ? pinnedData.filter((info) => info.expression.id === selectedExpression.id) : []),
+    [pinnedData, selectedExpression],
+  );
 
   const parameterValues = useMemo(() => {
     const values: Record<string, number> = {};
@@ -110,6 +118,55 @@ export function RightPanel() {
                 color={selectedExpression.color}
                 hasDerivative={!!derivativeResults[selectedExpression.id]}
               />
+
+              <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                <div className="mb-2 flex items-center gap-2 text-sm font-medium text-slate-700">
+                  <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: selectedExpression.color }} />
+                  已选取的点{selectedPinnedPoints.length > 0 ? `（${selectedPinnedPoints.length}）` : ""}
+                </div>
+                {selectedPinnedPoints.length > 0 ? (
+                  <ul className="space-y-1.5">
+                    {selectedPinnedPoints.map((info) => {
+                      const p = info.point;
+                      return (
+                        <li key={p.id} className="flex items-start gap-2 text-xs">
+                          <div className="min-w-0 flex-1">
+                            <p className="font-mono text-slate-700">
+                              P({fmtNum(p.x)}, {info.valid ? fmtNum(info.y) : "无定义"})
+                            </p>
+                            <p className="mt-0.5 text-slate-600">
+                              函数值：
+                              <span className={`font-mono font-medium ${info.valid ? "text-primary-700" : "text-amber-600"}`}>
+                                {info.valid ? fmtNum(info.y) : "无定义"}
+                              </span>
+                            </p>
+                            {derivativeResults[selectedExpression.id] ? (
+                              <p className="mt-0.5 text-slate-600">
+                                {"导数值 f'："}
+                                <span className={`font-mono font-medium ${info.derivativeValid ? "text-violet-700" : "text-amber-600"}`}>
+                                  {info.derivativeValid && info.derivative !== undefined ? fmtNum(info.derivative) : "无定义"}
+                                </span>
+                              </p>
+                            ) : null}
+                          </div>
+                          <button
+                            type="button"
+                            title="移除该点"
+                            onClick={() => removePinnedPoint(p.id)}
+                            className="flex h-4 w-4 shrink-0 items-center justify-center rounded text-slate-400 transition-colors hover:bg-red-50 hover:text-red-600"
+                          >
+                            ×
+                          </button>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                ) : (
+                  <p className="text-xs text-slate-400">
+                    点击画布中该函数的曲线可选取点并固定显示其数据，拖动标记可移动。
+                  </p>
+                )}
+              </div>
             </div>
           </section>
         ) : selectedGeometry ? (
@@ -223,7 +280,7 @@ function PointDataSection({
         </ul>
       ) : (
         <p className="text-xs text-slate-400">
-          将鼠标移动到画布上，此处会实时显示该函数在当前点的坐标与取值。
+          将鼠标移动到画布上，此处会实时显示该函数在当前点的坐标与取值；点击曲线可固定选取该点。
         </p>
       )}
     </div>

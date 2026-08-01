@@ -104,6 +104,13 @@ export interface MathDataset {
   createdAt: number;
 }
 
+export interface PinnedPoint {
+  id: string;
+  expressionId: string;
+  x: number;
+  createdAt: number;
+}
+
 export interface CalculatorRecord {
   id: string;
   input: string;
@@ -244,6 +251,7 @@ export interface MathCanvasState {
   expressions: MathExpression[];
   geometryObjects: GeometryObject[];
   datasets: MathDataset[];
+  pinnedPoints: PinnedPoint[];
   parameters: Record<string, MathParameter>;
   derivativeResults: Record<string, DerivativeResult>;
   derivativeVisibility: Record<string, DerivativeVisibility>;
