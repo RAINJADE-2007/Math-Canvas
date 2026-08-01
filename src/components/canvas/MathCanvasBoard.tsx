@@ -17,6 +17,7 @@ import type { NumericFunction } from "@/math-engine/calculus-intro/derivative/nu
 import { useHoverPointStore } from "@/store/useHoverPointStore";
 import type { HoverValue } from "@/store/useHoverPointStore";
 import { usePinnedPointsData } from "@/store/usePinnedPointsData";
+import { RatioControls } from "@/components/canvas/RatioControls";
 
 type Board = JXG.Board;
 type El = JXG.GeometryElement;
@@ -184,6 +185,7 @@ export function MathCanvasBoard() {
   const [viewInfo, setViewInfo] = useState<ViewInfo>({ level: 100, range: "" });
   const [canvasSize, setCanvasSize] = useState<{ w: number; h: number } | null>(null);
   const [ratioLocked, setRatioLocked] = useState(false);
+  const [ratioPanelOpen, setRatioPanelOpen] = useState(false);
   const hoverData = useHoverPointStore((s) => s.data);
 
   const expressions = useMathCanvasStore((s) => s.expressions);
@@ -391,6 +393,7 @@ const derivativeVisibility = useMathCanvasStore((s) => s.derivativeVisibility);
           e.preventDefault();
           return;
         }
+        if (tool !== "pan") return;
         const boardAny = board as unknown as { getMousePosition?: (ev: PointerEvent) => [number, number] };
         let scr: [number, number] | undefined;
         try {
@@ -908,6 +911,15 @@ const derivativeVisibility = useMathCanvasStore((s) => s.derivativeVisibility);
   }, [ready, activeTool]);
 
   useEffect(() => {
+    if (!ratioPanelOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setRatioPanelOpen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [ratioPanelOpen]);
+
+  useEffect(() => {
     if (!ready || !controllerRef.current) return;
     const s = useMathCanvasStore.getState();
     try {
@@ -1002,6 +1014,18 @@ const derivativeVisibility = useMathCanvasStore((s) => s.derivativeVisibility);
             >
               1:1
             </button>
+            <button
+              type="button"
+              title="调整画布比例"
+              onClick={() => setRatioPanelOpen((v) => !v)}
+              className={`rounded-md px-2 py-1 text-xs font-medium transition-colors ${
+                ratioPanelOpen
+                  ? "bg-primary-600 text-white"
+                  : "text-slate-600 hover:bg-primary-50 hover:text-primary-700"
+              }`}
+            >
+              比例
+            </button>
             <span className="w-11 text-center font-mono text-xs text-slate-600">{viewInfo.level}%</span>
           </div>
           <div className="rounded-md bg-white/85 px-2 py-0.5 font-mono text-[10px] text-slate-500">
@@ -1090,6 +1114,30 @@ const derivativeVisibility = useMathCanvasStore((s) => s.derivativeVisibility);
           )}
         </div>
       </div>
+      {ratioPanelOpen ? (
+        <div
+          className="fixed inset-0 z-40 flex items-center justify-center bg-slate-900/30"
+          onClick={() => setRatioPanelOpen(false)}
+        >
+          <div
+            className="w-[22rem] max-w-[calc(100vw-2rem)] rounded-xl border border-slate-200 bg-white p-4 shadow-card"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="mb-3 flex items-center justify-between">
+              <p className="text-sm font-semibold text-slate-700">调整画布比例</p>
+              <button
+                type="button"
+                title="关闭"
+                onClick={() => setRatioPanelOpen(false)}
+                className="flex h-7 w-7 items-center justify-center rounded-md text-slate-500 transition-colors hover:bg-slate-100"
+              >
+                ×
+              </button>
+            </div>
+            <RatioControls />
+          </div>
+        </div>
+      ) : null}
       </div>
     </div>
   );
