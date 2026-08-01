@@ -3,14 +3,15 @@
 import { useEffect, useRef, useState } from "react";
 import type JXG from "jsxgraph";
 import "@/styles/jsxgraph.css";
-import { useMathCanvasStore } from "@/store/useMathCanvasStore";
+import { useMathCanvasStore, uid } from "@/store/useMathCanvasStore";
+import { colorForIndex } from "@/constants/colors";
 import { createSafeFunction } from "@/math-engine/core/evaluator/evaluator";
 import type { SafeFunction } from "@/math-engine/core/evaluator/evaluator";
 import { sampleFunction } from "@/math-engine/core/evaluator/sampler";
 import type { SampleChunk } from "@/math-engine/core/evaluator/sampler";
 import { computeDerivative } from "@/math-engine/calculus-intro/derivative/differentiate";
 import { calculateSecant, calculateTangent } from "@/math-engine/calculus-intro/tangent/calculateTangent";
-import type { DerivativeResult, GeometryObject, MathExpression, MathParameter } from "@/types";
+import type { DerivativeResult, GeometryObject, GeometryObjectType, MathExpression, MathParameter } from "@/types";
 import type { NumericFunction } from "@/math-engine/calculus-intro/derivative/numericalDerivative";
 import { useHoverPointStore } from "@/store/useHoverPointStore";
 import type { HoverValue } from "@/store/useHoverPointStore";
@@ -111,6 +112,12 @@ interface BoardController {
     startUserY: number;
     baseDx: number;
     baseDy: number;
+  } | null;
+  geometryPlacement: {
+    type: "line" | "circle";
+    startX: number;
+    startY: number;
+    elements: El[];
   } | null;
   fns: Map<string, NumericFunction>;
   derivativeFns: Map<string, (x: number) => number>;
@@ -276,6 +283,22 @@ const derivativeVisibility = useMathCanvasStore((s) => s.derivativeVisibility);
       const containerEl = containerRef.current;
       let panState: { startX: number; startY: number; bbox: number[] } | null = null;
       let lastTranslateTime = 0;
+      let pendingClick: {
+        x: number;
+        y: number;
+        startClientX: number;
+        startClientY: number;
+        moved: boolean;
+      } | null = null;
+
+      const getUsrFromEvent = (e: PointerEvent): [number, number] | undefined => {
+        try {
+          const usr = board.getUsrCoordsOfMouse(e);
+          return [usr[0], usr[1]];
+        } catch {
+          return undefined;
+        }
+      };
 
       const hasDraggableUnder = (scrX: number, scrY: number): boolean => {
         const list = (board as unknown as { objectsList: unknown[] }).objectsList;
@@ -303,7 +326,15 @@ const derivativeVisibility = useMathCanvasStore((s) => s.derivativeVisibility);
       const onPointerDown = (e: PointerEvent) => {
         if (e.button !== 0) return;
         if (controller?.translateDrag) return;
-        if (useMathCanvasStore.getState().activeTool === "translate") return;
+        const tool = useMathCanvasStore.getState().activeTool;
+        if (tool === "translate") return;
+        if (tool === "add-point" || tool === "add-line" || tool === "add-circle") {
+          const usr = getUsrFromEvent(e);
+          if (!usr) return;
+          pendingClick = { x: usr[0], y: usr[1], startClientX: e.clientX, startClientY: e.clientY, moved: false };
+          e.preventDefault();
+          return;
+        }
         const boardAny = board as unknown as { getMousePosition?: (ev: PointerEvent) => [number, number] };
         let scr: [number, number] | undefined;
         try {
@@ -342,6 +373,22 @@ const derivativeVisibility = useMathCanvasStore((s) => s.derivativeVisibility);
           e.preventDefault();
           return;
         }
+        if (pendingClick) {
+          if (!pendingClick.moved) {
+            const moved =
+              Math.abs(e.clientX - pendingClick.startClientX) > 4 || Math.abs(e.clientY - pendingClick.startClientY) > 4;
+            if (moved) pendingClick.moved = true;
+          }
+          if (!pendingClick.moved && controller) {
+            const usr = getUsrFromEvent(e);
+            if (usr) updateGeometryPreview(board, controller, usr[0], usr[1]);
+          }
+          return;
+        }
+        if (controller?.geometryPlacement) {
+          const usr = getUsrFromEvent(e);
+          if (usr) updateGeometryPreview(board, controller, usr[0], usr[1]);
+        }
         if (!panState) return;
         const rect = containerEl.getBoundingClientRect();
         if (rect.width === 0 || rect.height === 0) return;
@@ -376,6 +423,17 @@ const derivativeVisibility = useMathCanvasStore((s) => s.derivativeVisibility);
           }
           return;
         }
+        if (pendingClick) {
+          if (!pendingClick.moved && controller) {
+            try {
+              handleGeometryClick(board, controller, pendingClick.x, pendingClick.y);
+            } catch {
+              /* ignore */
+            }
+          }
+          pendingClick = null;
+          return;
+        }
         if (!panState) return;
         panState = null;
         try {
@@ -390,11 +448,25 @@ const derivativeVisibility = useMathCanvasStore((s) => s.derivativeVisibility);
         useHoverPointStore.getState().setData(null);
       };
 
+      const onKeyDown = (e: KeyboardEvent) => {
+        if (e.key !== "Escape") return;
+        if (controller?.geometryPlacement) {
+          clearGeometryPlacement(board, controller);
+          try {
+            controller.redraw();
+          } catch {
+            /* ignore */
+          }
+        }
+        pendingClick = null;
+      };
+
       containerEl.addEventListener("pointerdown", onPointerDown);
       window.addEventListener("pointermove", onPointerMove);
       window.addEventListener("pointerup", onPointerUp);
       window.addEventListener("pointercancel", onPointerUp);
       containerEl.addEventListener("mouseleave", onLeave);
+      window.addEventListener("keydown", onKeyDown);
 
       cleanupListeners = () => {
         containerEl.removeEventListener("pointerdown", onPointerDown);
@@ -402,6 +474,7 @@ const derivativeVisibility = useMathCanvasStore((s) => s.derivativeVisibility);
         window.removeEventListener("pointerup", onPointerUp);
         window.removeEventListener("pointercancel", onPointerUp);
         containerEl.removeEventListener("mouseleave", onLeave);
+        window.removeEventListener("keydown", onKeyDown);
       };
 
       controller = {
@@ -417,6 +490,7 @@ const derivativeVisibility = useMathCanvasStore((s) => s.derivativeVisibility);
         lastCurveSignature: "",
         dragging: false,
         translateDrag: null,
+        geometryPlacement: null,
         fns: new Map(),
         derivativeFns: new Map(),
         redraw: () => {
@@ -528,8 +602,8 @@ const derivativeVisibility = useMathCanvasStore((s) => s.derivativeVisibility);
               try {
                 el.on("down", (evt) => {
                   const st = useMathCanvasStore.getState();
-                  st.selectObject(expr.id);
-                  if (st.activeTool === "translate") {
+                  const tool = st.activeTool;
+                  if (tool === "translate") {
                     try {
                       const coords = board.getUsrCoordsOfMouse(evt as MouseEvent);
                       if (coords) {
@@ -547,6 +621,8 @@ const derivativeVisibility = useMathCanvasStore((s) => s.derivativeVisibility);
                     }
                     return;
                   }
+                  if (tool === "add-point" || tool === "add-line" || tool === "add-circle") return;
+                  st.selectObject(expr.id);
                   try {
                     const coords = board.getUsrCoordsOfMouse(evt as MouseEvent);
                     if (coords && Number.isFinite(coords[0])) {
@@ -670,6 +746,11 @@ const derivativeVisibility = useMathCanvasStore((s) => s.derivativeVisibility);
 
   useEffect(() => {
     if (!ready || !controllerRef.current) return;
+    clearGeometryPlacement(controllerRef.current.board, controllerRef.current);
+  }, [ready, activeTool]);
+
+  useEffect(() => {
+    if (!ready || !controllerRef.current) return;
     const s = useMathCanvasStore.getState();
     try {
       controllerRef.current.board.setBoundingBox([
@@ -687,8 +768,23 @@ const derivativeVisibility = useMathCanvasStore((s) => s.derivativeVisibility);
     <div className="relative h-full w-full">
       <div
         ref={containerRef}
-        className={`h-full w-full ${activeTool === "pan" ? "cursor-grab" : ""}`}
+        className={`h-full w-full ${
+          activeTool === "pan"
+            ? "cursor-grab"
+            : activeTool === "add-point" || activeTool === "add-line" || activeTool === "add-circle"
+              ? "cursor-crosshair"
+              : ""
+        }`}
       />
+      {activeTool === "add-point" || activeTool === "add-line" || activeTool === "add-circle" ? (
+        <div className="pointer-events-none absolute left-1/2 top-3 z-10 -translate-x-1/2 whitespace-nowrap rounded-md bg-primary-600/90 px-2.5 py-1 text-xs text-white shadow-card">
+          {activeTool === "add-point"
+            ? "点击画布添加点"
+            : activeTool === "add-line"
+              ? "点击两点创建直线（Esc 取消）"
+              : "先点击圆心，再点击圆周上一点（Esc 取消）"}
+        </div>
+      ) : null}
       {!ready ? (
         <div className="absolute inset-0 flex flex-col items-center justify-center bg-white/85">
           <div className="h-9 w-9 animate-spin rounded-full border-[3px] border-primary-200 border-t-primary-600" />
@@ -904,6 +1000,177 @@ function drawPinnedPoints(
     }
 
     controller.pinnedPointElements.set(point.id, elements);
+  }
+}
+
+const PLACEMENT_COLOR = "#2563eb";
+
+function nextGeometryLabel(objects: GeometryObject[], type: GeometryObjectType): string {
+  if (type === "point") {
+    const used = new Set(objects.filter((o) => o.type === "point").map((o) => o.label));
+    for (let i = 0; i < 26; i++) {
+      const letter = String.fromCharCode(65 + i);
+      if (!used.has(letter)) return letter;
+    }
+    return `P${objects.length + 1}`;
+  }
+  const count = objects.filter((o) => o.type === type).length + 1;
+  return type === "line" ? `l${count}` : `c${count}`;
+}
+
+function clearGeometryPlacement(board: Board, controller: BoardController): void {
+  const placement = controller.geometryPlacement;
+  if (!placement) return;
+  for (const el of placement.elements) {
+    try {
+      board.removeObject(el);
+    } catch {
+      /* ignore */
+    }
+  }
+  controller.geometryPlacement = null;
+}
+
+function startGeometryPlacement(
+  board: Board,
+  controller: BoardController,
+  type: "line" | "circle",
+  x: number,
+  y: number,
+): void {
+  clearGeometryPlacement(board, controller);
+  const elements: El[] = [];
+  try {
+    elements.push(
+      board.create("point", [x, y], {
+        size: 2,
+        face: "circle",
+        strokeColor: PLACEMENT_COLOR,
+        fillColor: PLACEMENT_COLOR,
+        withLabel: false,
+      }) as El,
+    );
+  } catch {
+    /* ignore */
+  }
+  try {
+    if (type === "line") {
+      elements.push(
+        board.create("line", [[x, y], [x, y]], {
+          strokeColor: PLACEMENT_COLOR,
+          strokeWidth: 1.5,
+          dash: 1,
+          withLabel: false,
+        }) as El,
+      );
+    } else {
+      elements.push(
+        board.create("circle", [[x, y], 0.001], {
+          strokeColor: PLACEMENT_COLOR,
+          strokeWidth: 1.5,
+          dash: 1,
+          withLabel: false,
+        }) as El,
+      );
+    }
+  } catch {
+    /* ignore */
+  }
+  controller.geometryPlacement = { type, startX: x, startY: y, elements };
+}
+
+function updateGeometryPreview(board: Board, controller: BoardController, x: number, y: number): void {
+  const placement = controller.geometryPlacement;
+  if (!placement) return;
+  try {
+    if (placement.type === "line") {
+      const line = placement.elements.find(
+        (el) => (el as JXG.Line).point1 && (el as JXG.Line).point2,
+      ) as JXG.Line | undefined;
+      if (line?.point1?.setPosition) line.point1.setPosition(1, [placement.startX, placement.startY]);
+      if (line?.point2?.setPosition) line.point2.setPosition(1, [x, y]);
+    } else {
+      const circle = placement.elements.find(
+        (el) => typeof (el as { setRadius?: (r: number) => void }).setRadius === "function",
+      ) as (El & { setRadius?: (r: number) => void }) | undefined;
+      if (circle?.setRadius) circle.setRadius(Math.hypot(x - placement.startX, y - placement.startY));
+    }
+    try {
+      board.update();
+    } catch {
+      /* ignore */
+    }
+  } catch {
+    /* ignore */
+  }
+}
+
+function handleGeometryClick(board: Board, controller: BoardController, x: number, y: number): void {
+  const s = useMathCanvasStore.getState();
+  const tool = s.activeTool;
+  if (tool === "add-point") {
+    const obj: GeometryObject = {
+      id: uid("geo"),
+      type: "point",
+      label: nextGeometryLabel(s.geometryObjects, "point"),
+      color: colorForIndex(s.geometryObjects.length),
+      visible: true,
+      x,
+      y,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    };
+    s.addGeometryObject(obj);
+    s.selectObject(obj.id);
+    return;
+  }
+  if (tool === "add-line") {
+    const placement = controller.geometryPlacement;
+    if (!placement) {
+      startGeometryPlacement(board, controller, "line", x, y);
+      return;
+    }
+    const obj: GeometryObject = {
+      id: uid("geo"),
+      type: "line",
+      label: nextGeometryLabel(s.geometryObjects, "line"),
+      color: colorForIndex(s.geometryObjects.length),
+      visible: true,
+      x1: placement.startX,
+      y1: placement.startY,
+      x2: x,
+      y2: y,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    };
+    clearGeometryPlacement(board, controller);
+    s.addGeometryObject(obj);
+    s.selectObject(obj.id);
+    return;
+  }
+  if (tool === "add-circle") {
+    const placement = controller.geometryPlacement;
+    if (!placement) {
+      startGeometryPlacement(board, controller, "circle", x, y);
+      return;
+    }
+    const radius = Math.hypot(x - placement.startX, y - placement.startY);
+    clearGeometryPlacement(board, controller);
+    if (!Number.isFinite(radius) || radius <= 1e-9) return;
+    const obj: GeometryObject = {
+      id: uid("geo"),
+      type: "circle",
+      label: nextGeometryLabel(s.geometryObjects, "circle"),
+      color: colorForIndex(s.geometryObjects.length),
+      visible: true,
+      centerX: placement.startX,
+      centerY: placement.startY,
+      radius,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    };
+    s.addGeometryObject(obj);
+    s.selectObject(obj.id);
   }
 }
 
