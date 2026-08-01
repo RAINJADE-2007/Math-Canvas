@@ -6,7 +6,7 @@ import { buildDerivativeResult } from "@/math-engine/calculus-intro/derivative/d
 import { computeDerivative } from "@/math-engine/calculus-intro/derivative/differentiate";
 import { verifyDerivative } from "@/math-engine/calculus-intro/verifier/verifyDerivative";
 import { createSafeFunction } from "@/math-engine/core/evaluator/evaluator";
-import type { MathExpression } from "@/types";
+import type { DerivativeVisibility, MathExpression } from "@/types";
 import { SolutionStepsView } from "@/components/common/SolutionStepsView";
 import { LatexView } from "@/components/common/LatexView";
 import { TangentControls } from "@/components/derivative/TangentControls";
@@ -17,6 +17,7 @@ export function DerivativePanel() {
   const expressions = useMathCanvasStore((s) => s.expressions);
   const parameters = useMathCanvasStore((s) => s.parameters);
   const derivativeResults = useMathCanvasStore((s) => s.derivativeResults);
+  const derivativeVisibility = useMathCanvasStore((s) => s.derivativeVisibility);
   const setDerivativeResult = useMathCanvasStore((s) => s.setDerivativeResult);
   const toggleDerivative = useMathCanvasStore((s) => s.toggleDerivative);
 
@@ -140,35 +141,92 @@ export function DerivativePanel() {
       </div>
 
       {activeExpression && activeResult ? (
-        <div className="grid gap-4 xl:grid-cols-2">
-          <section className="space-y-3">
-            <DerivativeSummary expression={activeExpression} method={activeResult.method} derivativeLatex={activeResult.derivativeLatex} warning={activeResult.warning} />
-            {activeResult.derivativeExpression ? (
-              <button
-                type="button"
-                onClick={handleVerify}
-                className="rounded-md border border-slate-200 px-3 py-1.5 text-xs text-slate-600 hover:border-primary-300 hover:text-primary-700"
-              >
-                数值验证导数
-              </button>
-            ) : null}
-            {verifyMessage ? <p className="text-xs text-green-700">{verifyMessage}</p> : null}
+        <div className="space-y-3">
+          <VisibilityControls
+            expressionId={activeExpression.id}
+            visible={activeExpression.visible}
+            visibility={derivativeVisibility[activeExpression.id]}
+          />
+          <div className="grid gap-4 xl:grid-cols-2">
+            <section className="space-y-3">
+              <DerivativeSummary expression={activeExpression} method={activeResult.method} derivativeLatex={activeResult.derivativeLatex} warning={activeResult.warning} />
+              {activeResult.derivativeExpression ? (
+                <button
+                  type="button"
+                  onClick={handleVerify}
+                  className="rounded-md border border-slate-200 px-3 py-1.5 text-xs text-slate-600 hover:border-primary-300 hover:text-primary-700"
+                >
+                  数值验证导数
+                </button>
+              ) : null}
+              {verifyMessage ? <p className="text-xs text-green-700">{verifyMessage}</p> : null}
 
-            <TangentControls expressionId={activeExpression.id} result={activeResult} onSetTangentX={updateTangentX} />
-            <SecantControls expressionId={activeExpression.id} result={activeResult} onSetSecantH={updateSecantH} />
-            <MonotonicityPanel result={activeResult} />
-          </section>
+              <TangentControls expressionId={activeExpression.id} result={activeResult} onSetTangentX={updateTangentX} />
+              <SecantControls expressionId={activeExpression.id} result={activeResult} onSetSecantH={updateSecantH} />
+              <MonotonicityPanel result={activeResult} />
+            </section>
 
-          <section>
-            <p className="mb-2 text-sm font-medium text-slate-700">求导过程（分步）</p>
-            {activeResult.steps.length > 0 ? (
-              <SolutionStepsView steps={activeResult.steps} problemLatex={activeExpression.latex} />
-            ) : (
-              <p className="text-sm text-slate-500">没有可展示的求导步骤。</p>
-            )}
-          </section>
+            <section>
+              <p className="mb-2 text-sm font-medium text-slate-700">求导过程（分步）</p>
+              {activeResult.steps.length > 0 ? (
+                <SolutionStepsView steps={activeResult.steps} problemLatex={activeExpression.latex} />
+              ) : (
+                <p className="text-sm text-slate-500">没有可展示的求导步骤。</p>
+              )}
+            </section>
+          </div>
         </div>
       ) : null}
+    </div>
+  );
+}
+
+function VisibilityControls({
+  expressionId,
+  visible,
+  visibility,
+}: {
+  expressionId: string;
+  visible: boolean;
+  visibility: DerivativeVisibility | undefined;
+}) {
+  const toggleExpressionVisibility = useMathCanvasStore((s) => s.toggleExpressionVisibility);
+  const setDerivativeVisibility = useMathCanvasStore((s) => s.setDerivativeVisibility);
+
+  const items: { key: keyof DerivativeVisibility | "original"; label: string; checked: boolean }[] = [
+    { key: "original", label: "原函数", checked: visible },
+    { key: "derivative", label: "导函数", checked: visibility?.derivative !== false },
+    { key: "tangent", label: "切线", checked: visibility?.tangent !== false },
+    { key: "secant", label: "割线", checked: visibility?.secant !== false },
+    { key: "criticalPoints", label: "临界点", checked: visibility?.criticalPoints !== false },
+  ];
+
+  function toggle(key: keyof DerivativeVisibility | "original") {
+    if (key === "original") {
+      toggleExpressionVisibility(expressionId);
+      return;
+    }
+    const checked = visibility?.[key] !== false;
+    setDerivativeVisibility(expressionId, { [key]: !checked });
+  }
+
+  return (
+    <div className="flex flex-wrap items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 p-3">
+      <span className="text-sm font-medium text-slate-700">显示内容：</span>
+      {items.map((item) => (
+        <button
+          key={item.key}
+          type="button"
+          onClick={() => toggle(item.key)}
+          className={`rounded-md px-3 py-1 text-xs transition-colors ${
+            item.checked
+              ? "bg-primary-600 text-white hover:bg-primary-700"
+              : "border border-slate-300 bg-white text-slate-500 hover:border-primary-300 hover:text-primary-700"
+          }`}
+        >
+          {item.label}
+        </button>
+      ))}
     </div>
   );
 }

@@ -2,6 +2,7 @@
 
 import { useMemo } from "react";
 import { useMathCanvasStore } from "@/store/useMathCanvasStore";
+import { useHoverPointStore } from "@/store/useHoverPointStore";
 import { analyzeMiddleSchoolFunction } from "@/math-engine/middle-school/functions/analyze";
 import { LatexView } from "@/components/common/LatexView";
 
@@ -102,6 +103,13 @@ export function RightPanel() {
                   已开启导数分析，切线、割线与单调性信息请查看「导数分析」面板。
                 </p>
               ) : null}
+
+              <PointDataSection
+                expressionId={selectedExpression.id}
+                label={selectedExpression.rawInput}
+                color={selectedExpression.color}
+                hasDerivative={!!derivativeResults[selectedExpression.id]}
+              />
             </div>
           </section>
         ) : selectedGeometry ? (
@@ -168,4 +176,61 @@ export function RightPanel() {
       </div>
     </div>
   );
+}
+
+function PointDataSection({
+  expressionId,
+  label,
+  color,
+  hasDerivative,
+}: {
+  expressionId: string;
+  label: string;
+  color: string;
+  hasDerivative: boolean;
+}) {
+  const hover = useHoverPointStore((s) => s.data);
+  const item = hover?.values.find((v) => v.id === expressionId);
+
+  return (
+    <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+      <div className="mb-2 flex items-center gap-2 text-sm font-medium text-slate-700">
+        <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: color }} />
+        点的数据
+      </div>
+      {hover && item ? (
+        <ul className="space-y-1.5 text-sm">
+          <li className="text-slate-600">
+            当前点：
+            <span className="font-mono text-slate-800">
+              P({fmtNum(hover.x)}, {fmtNum(hover.y)})
+            </span>
+          </li>
+          <li className="text-slate-600">
+            函数值 {label}：
+            <span className={`font-mono font-medium ${item.valid ? "text-primary-700" : "text-amber-600"}`}>
+              {item.valid ? fmtNum(item.value) : "无定义"}
+            </span>
+          </li>
+          {hasDerivative ? (
+            <li className="text-slate-600">
+              {"导数值 f'："}
+              <span className={`font-mono font-medium ${item.derivativeValid ? "text-violet-700" : "text-amber-600"}`}>
+                {item.derivativeValid && item.derivative !== undefined ? fmtNum(item.derivative) : "无定义"}
+              </span>
+            </li>
+          ) : null}
+        </ul>
+      ) : (
+        <p className="text-xs text-slate-400">
+          将鼠标移动到画布上，此处会实时显示该函数在当前点的坐标与取值。
+        </p>
+      )}
+    </div>
+  );
+}
+
+function fmtNum(n: number): string {
+  if (!Number.isFinite(n)) return "—";
+  return Number.isInteger(n) ? String(n) : n.toFixed(3);
 }

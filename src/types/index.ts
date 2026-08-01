@@ -172,6 +172,13 @@ export interface DerivativeResult {
   warning?: string;
 }
 
+export interface DerivativeVisibility {
+  derivative: boolean;
+  tangent: boolean;
+  secant: boolean;
+  criticalPoints: boolean;
+}
+
 export interface FunctionPropertyItem {
   key: string;
   label: string;
@@ -239,6 +246,7 @@ export interface MathCanvasState {
   datasets: MathDataset[];
   parameters: Record<string, MathParameter>;
   derivativeResults: Record<string, DerivativeResult>;
+  derivativeVisibility: Record<string, DerivativeVisibility>;
   selectedObjectId: string | null;
   activeTool: ToolId;
   canvasSettings: CanvasSettings;

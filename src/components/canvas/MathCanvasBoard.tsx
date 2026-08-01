@@ -11,6 +11,8 @@ import { computeDerivative } from "@/math-engine/calculus-intro/derivative/diffe
 import { calculateSecant, calculateTangent } from "@/math-engine/calculus-intro/tangent/calculateTangent";
 import type { DerivativeResult, GeometryObject, MathExpression, MathParameter } from "@/types";
 import type { NumericFunction } from "@/math-engine/calculus-intro/derivative/numericalDerivative";
+import { useHoverPointStore } from "@/store/useHoverPointStore";
+import type { HoverValue } from "@/store/useHoverPointStore";
 
 type Board = JXG.Board;
 type El = JXG.GeometryElement;
@@ -49,7 +51,7 @@ interface CurveInfo {
 interface TangentInfo {
   glider?: JXG.Point;
   tangentLine: JXG.Line;
-  secantLine: JXG.Line;
+  secantLine?: JXG.Line;
   secantPoint?: El;
   text: JXG.Text;
   expressionId: string;
@@ -69,6 +71,23 @@ interface BoardController {
   fns: Map<string, NumericFunction>;
   derivativeFns: Map<string, (x: number) => number>;
   redraw: () => void;
+  autoFit: () => void;
+  getViewInfo: () => ViewInfo;
+}
+
+interface ViewInfo {
+  level: number;
+  range: string;
+}
+
+function computeViewInfo(board: Board): ViewInfo {
+  const bb = board.getBoundingBox();
+  const width = Math.max(bb[2] - bb[0], 1e-6);
+  const level = Math.max(1, Math.round((20 / width) * 100));
+  const fmt = (n: number): string =>
+    Math.abs(n) < 1e6 ? String(Number(n.toFixed(2))) : n.toExponential(2);
+  const range = `x:[${fmt(bb[0])}, ${fmt(bb[2])}]  y:[${fmt(bb[3])}, ${fmt(bb[1])}]`;
+  return { level, range };
 }
 
 function curveSignature(): string {
@@ -84,29 +103,41 @@ function curveSignature(): string {
     .sort()
     .map((id) => `${id}|${s.derivativeResults[id].derivativeExpression ?? ""}|${s.derivativeResults[id].method}`)
     .join(";");
+  const derivVis = Object.keys(s.derivativeVisibility)
+    .sort()
+    .map((id) => {
+      const v = s.derivativeVisibility[id];
+      return `${id}|${v.derivative}|${v.tangent}|${v.secant}|${v.criticalPoints}`;
+    })
+    .join(";");
   const geo = s.geometryObjects.map((g) => `${g.id}|${g.visible}|${g.type}|${g.x ?? ""}|${g.y ?? ""}|${g.x1 ?? ""}|${g.y1 ?? ""}|${g.x2 ?? ""}|${g.y2 ?? ""}|${g.centerX ?? ""}|${g.centerY ?? ""}|${g.radius ?? ""}`).join(";");
   const settings = `${s.canvasSettings.showGrid}|${s.canvasSettings.showAxes}|${s.canvasSettings.showLabels}|${s.canvasSettings.showMonotonicityHint}`;
-  return `${params}|${exprs}|${derivs}|${geo}|${settings}`;
+  return `${params}|${exprs}|${derivs}|${derivVis}|${geo}|${settings}`;
 }
 
 export function MathCanvasBoard() {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const controllerRef = useRef<BoardController | null>(null);
   const [ready, setReady] = useState(false);
+  const [viewInfo, setViewInfo] = useState<ViewInfo>({ level: 100, range: "" });
+  const hoverData = useHoverPointStore((s) => s.data);
 
   const expressions = useMathCanvasStore((s) => s.expressions);
   const parameters = useMathCanvasStore((s) => s.parameters);
   const derivativeResults = useMathCanvasStore((s) => s.derivativeResults);
+const derivativeVisibility = useMathCanvasStore((s) => s.derivativeVisibility);
   const geometryObjects = useMathCanvasStore((s) => s.geometryObjects);
   const showGrid = useMathCanvasStore((s) => s.canvasSettings.showGrid);
   const showAxes = useMathCanvasStore((s) => s.canvasSettings.showAxes);
   const showLabels = useMathCanvasStore((s) => s.canvasSettings.showLabels);
   const showMonotonicityHint = useMathCanvasStore((s) => s.canvasSettings.showMonotonicityHint);
   const viewVersion = useMathCanvasStore((s) => s.canvasSettings.viewVersion);
+  const activeTool = useMathCanvasStore((s) => s.activeTool);
 
   useEffect(() => {
     let cancelled = false;
     let controller: BoardController | null = null;
+    let cleanupListeners: (() => void) | null = null;
 
     (async () => {
       const JXGModule = await import("jsxgraph");
@@ -137,18 +168,155 @@ export function MathCanvasBoard() {
         { fixed: true, anchorX: "left", anchorY: "top", fontSize: 12, strokeColor: "#64748b" },
       ) as JXG.Text;
 
+      let lastHoverTime = 0;
+      const updateHover = (x: number, y: number) => {
+        const now = Date.now();
+        if (now - lastHoverTime < 80) return;
+        lastHoverTime = now;
+        const s = useMathCanvasStore.getState();
+        const values: HoverValue[] = [];
+        for (const expr of s.expressions) {
+          if (!expr.visible) continue;
+          let fn = controller!.fns.get(expr.id);
+          if (!fn) {
+            fn = makeNumericFn(expr, s.parameters);
+            controller!.fns.set(expr.id, fn);
+          }
+          const v = fn(x);
+          let derivative: number | undefined;
+          let derivativeValid = false;
+          if (s.derivativeResults[expr.id]) {
+            const dAt = derivativeAtFor(board, controller!, expr.id);
+            if (dAt) {
+              const dv = dAt(x);
+              if (Number.isFinite(dv)) {
+                derivative = dv;
+                derivativeValid = true;
+              }
+            }
+          }
+          values.push({
+            id: expr.id,
+            label: expr.rawInput,
+            color: expr.color,
+            value: v,
+            valid: Number.isFinite(v),
+            derivative,
+            derivativeValid,
+          });
+        }
+        useHoverPointStore.getState().setData({ x, y, values });
+      };
+
       try {
         board.on("move", (evt) => {
           if (board.getUsrCoordsOfMouse) {
             const coords = board.getUsrCoordsOfMouse(evt as MouseEvent);
-            if (coords && coordinateText.setText) {
-              coordinateText.setText(`x: ${coords[0].toFixed(2)}, y: ${coords[1].toFixed(2)}`);
+            if (coords) {
+              if (coordinateText.setText) {
+                coordinateText.setText(`x: ${coords[0].toFixed(2)}, y: ${coords[1].toFixed(2)}`);
+              }
+              updateHover(coords[0], coords[1]);
             }
           }
         });
       } catch {
         /* 坐标提示为可选功能 */
       }
+
+      const containerEl = containerRef.current;
+      let panState: { startX: number; startY: number; bbox: number[] } | null = null;
+
+      const hasDraggableUnder = (scrX: number, scrY: number): boolean => {
+        const list = (board as unknown as { objectsList: unknown[] }).objectsList;
+        if (!list) return false;
+        for (const raw of list) {
+          const el = raw as {
+            elType?: string;
+            hasPoint?: (x: number, y: number) => boolean;
+            isDraggable?: boolean;
+            visPropCalc?: { visible?: boolean };
+          };
+          if (!el.hasPoint || !el.isDraggable) continue;
+          const type = el.elType ?? "";
+          if (type !== "point" && type !== "glider") continue;
+          if (el.visPropCalc && el.visPropCalc.visible === false) continue;
+          try {
+            if (el.hasPoint(scrX, scrY)) return true;
+          } catch {
+            /* ignore */
+          }
+        }
+        return false;
+      };
+
+      const onPointerDown = (e: PointerEvent) => {
+        if (e.button !== 0) return;
+        const boardAny = board as unknown as { getMousePosition?: (ev: PointerEvent) => [number, number] };
+        let scr: [number, number] | undefined;
+        try {
+          scr = boardAny.getMousePosition ? boardAny.getMousePosition(e) : undefined;
+        } catch {
+          /* ignore */
+        }
+        if (!scr) return;
+        if (hasDraggableUnder(scr[0], scr[1])) return;
+        panState = { startX: e.clientX, startY: e.clientY, bbox: board.getBoundingBox().slice() };
+        try {
+          containerEl.style.cursor = "grabbing";
+        } catch {
+          /* ignore */
+        }
+        e.preventDefault();
+      };
+
+      const onPointerMove = (e: PointerEvent) => {
+        if (!panState) return;
+        const rect = containerEl.getBoundingClientRect();
+        if (rect.width === 0 || rect.height === 0) return;
+        const dx = e.clientX - panState.startX;
+        const dy = e.clientY - panState.startY;
+        const bb = panState.bbox;
+        const upx = (bb[2] - bb[0]) / rect.width;
+        const upy = (bb[1] - bb[3]) / rect.height;
+        const xShift = dx * upx;
+        const yShift = dy * upy;
+        try {
+          board.setBoundingBox([bb[0] - xShift, bb[1] + yShift, bb[2] - xShift, bb[3] + yShift]);
+        } catch {
+          /* ignore */
+        }
+        e.preventDefault();
+      };
+
+      const onPointerUp = () => {
+        if (!panState) return;
+        panState = null;
+        try {
+          containerEl.style.cursor = "";
+        } catch {
+          /* ignore */
+        }
+        controller?.redraw();
+      };
+
+      const onLeave = () => {
+        useHoverPointStore.getState().setData(null);
+      };
+
+      containerEl.addEventListener("pointerdown", onPointerDown);
+      window.addEventListener("pointermove", onPointerMove);
+      window.addEventListener("pointerup", onPointerUp);
+      window.addEventListener("pointercancel", onPointerUp);
+      containerEl.addEventListener("mouseleave", onLeave);
+
+      cleanupListeners = () => {
+        containerEl.removeEventListener("pointerdown", onPointerDown);
+        window.removeEventListener("pointermove", onPointerMove);
+        window.removeEventListener("pointerup", onPointerUp);
+        window.removeEventListener("pointercancel", onPointerUp);
+        containerEl.removeEventListener("mouseleave", onLeave);
+      };
 
       controller = {
         board,
@@ -166,6 +334,35 @@ export function MathCanvasBoard() {
         redraw: () => {
           /* implemented below */
         },
+        autoFit: () => {
+          const s = useMathCanvasStore.getState();
+          const bb = board.getBoundingBox();
+          const xMin = bb[0];
+          const xMax = bb[2];
+          let minY = Infinity;
+          let maxY = -Infinity;
+          for (const expr of s.expressions) {
+            if (!expr.visible) continue;
+            const fn = makeNumericFn(expr, s.parameters);
+            for (let i = 0; i <= 300; i++) {
+              const x = xMin + ((xMax - xMin) * i) / 300;
+              const y = fn(x);
+              if (Number.isFinite(y)) {
+                if (y < minY) minY = y;
+                if (y > maxY) maxY = y;
+              }
+            }
+          }
+          if (!Number.isFinite(minY) || !Number.isFinite(maxY)) return;
+          const span = maxY - minY;
+          const pad = span > 0 ? span * 0.12 : 1;
+          try {
+            board.setBoundingBox([xMin, maxY + pad, xMax, minY - pad]);
+          } catch {
+            /* ignore */
+          }
+        },
+        getViewInfo: () => computeViewInfo(board),
       };
 
       const applyVisibility = () => {
@@ -185,7 +382,10 @@ export function MathCanvasBoard() {
         const bb = board.getBoundingBox().join(",");
         if (bb === lastBBox) return;
         lastBBox = bb;
-        window.setTimeout(() => controller?.redraw(), 120);
+        setViewInfo(computeViewInfo(board));
+        if (!panState) {
+          window.setTimeout(() => controller?.redraw(), 120);
+        }
       });
 
       controller.redraw = () => {
@@ -276,6 +476,7 @@ export function MathCanvasBoard() {
             if (!expr.visible) continue;
             const derivative = s.derivativeResults[expr.id];
             if (!derivative?.derivativeExpression) continue;
+            if (s.derivativeVisibility[expr.id]?.derivative === false) continue;
             const paramValues: Record<string, number> = {};
             for (const p of expr.parameters) {
               const v = s.parameters[p]?.value;
@@ -317,12 +518,18 @@ export function MathCanvasBoard() {
       };
 
       controller.redraw();
+      setViewInfo(computeViewInfo(board));
       setReady(true);
       controllerRef.current = controller;
     })();
 
     return () => {
       cancelled = true;
+      try {
+        cleanupListeners?.();
+      } catch {
+        /* ignore */
+      }
       try {
         if (controllerRef.current) {
           const board = controllerRef.current.board;
@@ -342,7 +549,7 @@ export function MathCanvasBoard() {
   useEffect(() => {
     if (!ready || !controllerRef.current) return;
     controllerRef.current.redraw();
-  }, [ready, expressions, parameters, derivativeResults, geometryObjects, showGrid, showAxes, showLabels, showMonotonicityHint]);
+  }, [ready, expressions, parameters, derivativeResults, derivativeVisibility, geometryObjects, showGrid, showAxes, showLabels, showMonotonicityHint]);
 
   useEffect(() => {
     if (!ready || !controllerRef.current) return;
@@ -361,15 +568,86 @@ export function MathCanvasBoard() {
 
   return (
     <div className="relative h-full w-full">
-      <div ref={containerRef} className="h-full w-full" />
+      <div
+        ref={containerRef}
+        className={`h-full w-full ${activeTool === "pan" ? "cursor-grab" : ""}`}
+      />
       {!ready ? (
         <div className="absolute inset-0 flex flex-col items-center justify-center bg-white/85">
           <div className="h-9 w-9 animate-spin rounded-full border-[3px] border-primary-200 border-t-primary-600" />
           <p className="mt-3 text-sm text-slate-500">正在初始化坐标画布…</p>
         </div>
-      ) : null}
+      ) : (
+        <div className="absolute right-3 top-3 z-10 flex flex-col items-end gap-1.5">
+          <div className="flex items-center gap-1 rounded-lg border border-slate-200 bg-white/95 px-1.5 py-1 shadow-card">
+            <button
+              type="button"
+              title="放大"
+              onClick={() => controllerRef.current?.board.zoomIn()}
+              className="flex h-7 w-7 items-center justify-center rounded-md text-base font-semibold text-slate-600 transition-colors hover:bg-primary-50 hover:text-primary-700"
+            >
+              ＋
+            </button>
+            <button
+              type="button"
+              title="缩小"
+              onClick={() => controllerRef.current?.board.zoomOut()}
+              className="flex h-7 w-7 items-center justify-center rounded-md text-base font-semibold text-slate-600 transition-colors hover:bg-primary-50 hover:text-primary-700"
+            >
+              −
+            </button>
+            <button
+              type="button"
+              title="自动适配：按当前横坐标范围调整纵坐标，使函数图像完整可见"
+              onClick={() => controllerRef.current?.autoFit()}
+              className="rounded-md px-2 py-1 text-xs font-medium text-slate-600 transition-colors hover:bg-primary-50 hover:text-primary-700"
+            >
+              适配
+            </button>
+            <span className="w-11 text-center font-mono text-xs text-slate-600">{viewInfo.level}%</span>
+          </div>
+          <div className="rounded-md bg-white/85 px-2 py-0.5 font-mono text-[10px] text-slate-500">
+            {viewInfo.range}
+          </div>
+        </div>
+      )}
+      <div className="pointer-events-none absolute bottom-3 right-3 z-10 w-64 max-w-[70%] rounded-lg border border-slate-200 bg-white/95 p-3 shadow-card">
+        <p className="text-xs font-semibold text-slate-500">点的数据</p>
+        {hoverData ? (
+          <>
+            <p className="mt-1 font-mono text-xs text-slate-700">
+              P({fmt2(hoverData.x)}, {fmt2(hoverData.y)})
+            </p>
+            {hoverData.values.length > 0 ? (
+              <ul className="mt-1.5 space-y-1">
+                {hoverData.values.map((v) => (
+                  <li key={v.id} className="flex items-center gap-1.5 text-xs">
+                    <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: v.color }} />
+                    <span className="max-w-[80px] truncate text-slate-500" title={v.label}>
+                      {v.label}
+                    </span>
+                    <span className="ml-auto font-mono text-slate-700">{v.valid ? fmt2(v.value) : "无定义"}</span>
+                    {v.derivativeValid && v.derivative !== undefined ? (
+                      <span className="font-mono text-violet-600">{"f'="}{fmt2(v.derivative)}</span>
+                    ) : null}
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="mt-1 text-xs text-slate-400">添加函数后，此处会显示各函数在该点的取值。</p>
+            )}
+          </>
+        ) : (
+          <p className="mt-1 text-xs text-slate-400">将鼠标移动到画布上，查看各点的坐标与函数值。</p>
+        )}
+      </div>
     </div>
   );
+}
+
+function fmt2(n: number): string {
+  if (!Number.isFinite(n)) return "—";
+  return Number.isInteger(n) ? String(n) : n.toFixed(3);
 }
 
 function drawGeometry(board: Board, controller: BoardController, geometryObjects: GeometryObject[], showLabels: boolean): void {
@@ -448,6 +726,7 @@ function drawCriticalPoints(board: Board, controller: BoardController, s: Return
   for (const expr of s.expressions) {
     const derivative = s.derivativeResults[expr.id];
     if (!derivative) continue;
+    if (s.derivativeVisibility[expr.id]?.criticalPoints === false) continue;
     const fn = controller.fns.get(expr.id);
     if (!fn) continue;
     for (const cp of derivative.criticalPoints) {
@@ -520,6 +799,19 @@ function drawTangents(board: Board, controller: BoardController): void {
   for (const expr of s.expressions) {
     const derivative = s.derivativeResults[expr.id];
     if (!derivative) continue;
+    const vis = s.derivativeVisibility[expr.id];
+    const showTangent = vis?.tangent !== false;
+    const showSecant = vis?.secant !== false;
+
+    if (!showTangent) {
+      const existing = controller.tangentElements.get(expr.id);
+      if (existing) {
+        removeTangentElements(board, existing);
+        controller.tangentElements.delete(expr.id);
+      }
+      continue;
+    }
+
     const tangent = derivative.tangent;
     const curveInfo = controller.curves.get(expr.id);
     if (!curveInfo || !tangent) continue;
@@ -582,15 +874,17 @@ function drawTangents(board: Board, controller: BoardController): void {
         withLabel: false,
       }) as JXG.Line;
 
-      const secantLine = board.create("line", [[tangent.x, tangent.y], [secant?.x2 ?? tangent.x + 2, secant?.y2 ?? tangent.y]], {
-        strokeColor: "#d97706",
-        strokeWidth: 1.8,
-        name: "割线",
-        withLabel: false,
-      }) as JXG.Line;
+      const secantLine = showSecant
+        ? (board.create("line", [[tangent.x, tangent.y], [secant?.x2 ?? tangent.x + 2, secant?.y2 ?? tangent.y]], {
+            strokeColor: "#d97706",
+            strokeWidth: 1.8,
+            name: "割线",
+            withLabel: false,
+          }) as JXG.Line)
+        : undefined;
 
       let secantPoint: El | undefined;
-      if (secant && Number.isFinite(secant.x2) && Number.isFinite(secant.y2)) {
+      if (showSecant && secant && Number.isFinite(secant.x2) && Number.isFinite(secant.y2)) {
         secantPoint = board.create("point", [secant.x2, secant.y2], {
           name: "Q",
           size: 3,
@@ -641,7 +935,7 @@ function drawTangents(board: Board, controller: BoardController): void {
     }
 
     try {
-      if (currentSecant && Number.isFinite(currentSecant.x2) && Number.isFinite(currentSecant.y2)) {
+      if (showSecant && info.secantLine && currentSecant && Number.isFinite(currentSecant.x2) && Number.isFinite(currentSecant.y2)) {
         if (info.secantLine.point1 && info.secantLine.point1.setPosition) {
           info.secantLine.point1.setPosition(1, [activeX, currentTangent.y]);
         }
@@ -654,7 +948,7 @@ function drawTangents(board: Board, controller: BoardController): void {
     }
 
     try {
-      if (info.secantPoint && currentSecant && Number.isFinite(currentSecant.x2) && Number.isFinite(currentSecant.y2)) {
+      if (showSecant && info.secantPoint && currentSecant && Number.isFinite(currentSecant.x2) && Number.isFinite(currentSecant.y2)) {
         info.secantPoint.setPosition(1, [currentSecant.x2, currentSecant.y2]);
       }
     } catch {
@@ -662,7 +956,7 @@ function drawTangents(board: Board, controller: BoardController): void {
     }
 
     try {
-      info.text.setText(buildTangentText(currentTangent, currentSecant));
+      info.text.setText(buildTangentText(currentTangent, showSecant ? currentSecant : undefined));
     } catch {
       /* ignore */
     }
@@ -681,7 +975,7 @@ function removeTangentElements(board: Board, info: TangentInfo): void {
     /* ignore */
   }
   try {
-    board.removeObject(info.secantLine);
+    if (info.secantLine) board.removeObject(info.secantLine);
   } catch {
     /* ignore */
   }

@@ -5,6 +5,7 @@ import type {
   CalculatorRecord,
   CanvasSettings,
   DerivativeResult,
+  DerivativeVisibility,
   GeometryObject,
   MathCanvasData,
   MathCanvasState,
@@ -65,6 +66,7 @@ function defaultState(): Omit<MathCanvasState, "past" | "future"> {
     datasets: [],
     parameters: {},
     derivativeResults: {},
+    derivativeVisibility: {},
     selectedObjectId: null,
     activeTool: "select",
     canvasSettings: defaultCanvasSettings(),
@@ -105,6 +107,18 @@ function ensureParameters(
   return params;
 }
 
+function pruneUnusedParameters(expressions: MathExpression[], parameters: Record<string, MathParameter>): Record<string, MathParameter> {
+  const used = new Set<string>();
+  for (const expression of expressions) {
+    for (const name of expression.parameters) used.add(name);
+  }
+  const result: Record<string, MathParameter> = {};
+  for (const [name, param] of Object.entries(parameters)) {
+    if (used.has(name)) result[name] = param;
+  }
+  return result;
+}
+
 interface MathCanvasActions {
   setCurrentSubject: (subject: SubjectId) => void;
   setDocumentName: (name: string) => void;
@@ -129,6 +143,7 @@ interface MathCanvasActions {
   setDerivativeResult: (expressionId: string, result: DerivativeResult) => void;
   removeDerivativeResult: (expressionId: string) => void;
   toggleDerivative: (expressionId: string) => void;
+  setDerivativeVisibility: (expressionId: string, patch: Partial<DerivativeVisibility>) => void;
 
   selectObject: (id: string | null) => void;
   setActiveTool: (tool: ToolId) => void;
@@ -243,29 +258,36 @@ export const useMathCanvasStore = create<MathCanvasStore>()(
       updateExpression: (id, patch) =>
         set((state) => {
           const existing = state.expressions.find((e) => e.id === id);
+          const updatedExpressions = state.expressions.map((e) =>
+            e.id === id ? { ...e, ...patch, updatedAt: Date.now() } : e,
+          );
           let parameters = state.parameters;
           if (existing && (patch.parameters || patch.normalizedExpression)) {
-            const updated = { ...existing, ...patch } as MathExpression;
+            const updated = updatedExpressions.find((e) => e.id === id) as MathExpression;
             parameters = ensureParameters(state, updated);
           }
+          parameters = pruneUnusedParameters(updatedExpressions, parameters);
           return {
             ...withHistory(state),
-            expressions: state.expressions.map((e) =>
-              e.id === id ? { ...e, ...patch, updatedAt: Date.now() } : e,
-            ),
+            expressions: updatedExpressions,
             parameters,
           };
         }),
 
       removeExpression: (id) =>
         set((state) => {
+          const remainingExpressions = state.expressions.filter((e) => e.id !== id);
           const next = {
             ...withHistory(state),
-            expressions: state.expressions.filter((e) => e.id !== id),
+            expressions: remainingExpressions,
+            parameters: pruneUnusedParameters(remainingExpressions, state.parameters),
           } as Partial<MathCanvasState>;
           const derivativeResults = { ...state.derivativeResults };
           delete derivativeResults[id];
           next.derivativeResults = derivativeResults;
+          const derivativeVisibility = { ...state.derivativeVisibility };
+          delete derivativeVisibility[id];
+          next.derivativeVisibility = derivativeVisibility;
           if (state.selectedObjectId === id) next.selectedObjectId = null;
           return next;
         }),
@@ -359,6 +381,22 @@ export const useMathCanvasStore = create<MathCanvasStore>()(
           return { derivativeResults };
         }),
 
+      setDerivativeVisibility: (expressionId, patch) =>
+        set((state) => {
+          const current = state.derivativeVisibility[expressionId] ?? {
+            derivative: true,
+            tangent: true,
+            secant: true,
+            criticalPoints: true,
+          };
+          return {
+            derivativeVisibility: {
+              ...state.derivativeVisibility,
+              [expressionId]: { ...current, ...patch },
+            },
+          };
+        }),
+
       toggleDerivative: (expressionId) => {
         const state = get();
         const expression = state.expressions.find((e) => e.id === expressionId);
@@ -367,7 +405,9 @@ export const useMathCanvasStore = create<MathCanvasStore>()(
           set((s) => {
             const derivativeResults = { ...s.derivativeResults };
             delete derivativeResults[expressionId];
-            return { derivativeResults };
+            const derivativeVisibility = { ...s.derivativeVisibility };
+            delete derivativeVisibility[expressionId];
+            return { derivativeResults, derivativeVisibility };
           });
           return;
         }
@@ -385,6 +425,15 @@ export const useMathCanvasStore = create<MathCanvasStore>()(
           derivativeResults: {
             ...s.derivativeResults,
             [expressionId]: result,
+          },
+          derivativeVisibility: {
+            ...s.derivativeVisibility,
+            [expressionId]: {
+              derivative: true,
+              tangent: true,
+              secant: true,
+              criticalPoints: true,
+            },
           },
         }));
       },
