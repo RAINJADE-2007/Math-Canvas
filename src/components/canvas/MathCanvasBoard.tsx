@@ -359,7 +359,17 @@ export function MathCanvasBoard() {
     }
   }, [ready, viewVersion]);
 
-  return <div ref={containerRef} className="h-full w-full" />;
+  return (
+    <div className="relative h-full w-full">
+      <div ref={containerRef} className="h-full w-full" />
+      {!ready ? (
+        <div className="absolute inset-0 flex flex-col items-center justify-center bg-white/85">
+          <div className="h-9 w-9 animate-spin rounded-full border-[3px] border-primary-200 border-t-primary-600" />
+          <p className="mt-3 text-sm text-slate-500">正在初始化坐标画布…</p>
+        </div>
+      ) : null}
+    </div>
+  );
 }
 
 function drawGeometry(board: Board, controller: BoardController, geometryObjects: GeometryObject[], showLabels: boolean): void {

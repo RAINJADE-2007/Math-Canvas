@@ -70,13 +70,15 @@ export function CanvasWorkspace() {
           ))}
         </nav>
         <div className="panel-scroll flex-1 overflow-y-auto p-4">
-          {activeTab === "expressions" && <ExpressionPanel />}
-          {activeTab === "parameters" && <ParameterPanel />}
-          {activeTab === "calculator" && <CalculatorPanel />}
-          {activeTab === "solver" && <SolverPanel />}
-          {activeTab === "geometry" && <GeometryPanel />}
-          {activeTab === "statistics" && <StatisticsPanel />}
-          {activeTab === "derivative" && <DerivativePanel />}
+          <div key={activeTab} className="tab-enter">
+            {activeTab === "expressions" && <ExpressionPanel />}
+            {activeTab === "parameters" && <ParameterPanel />}
+            {activeTab === "calculator" && <CalculatorPanel />}
+            {activeTab === "solver" && <SolverPanel />}
+            {activeTab === "geometry" && <GeometryPanel />}
+            {activeTab === "statistics" && <StatisticsPanel />}
+            {activeTab === "derivative" && <DerivativePanel />}
+          </div>
         </div>
       </div>
     </div>

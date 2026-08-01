@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import "./globals.css";
 import { Header } from "@/components/layout/Header";
 import { ErrorBoundary } from "@/components/common/ErrorBoundary";
+import { AnimatedPage } from "@/components/layout/AnimatedPage";
+import { RouteLoadingBar } from "@/components/layout/RouteLoadingBar";
 import { APP_NAME, APP_NAME_ZH, TAGLINE } from "@/constants/app";
 
 export const metadata: Metadata = {
@@ -23,9 +25,12 @@ export default function RootLayout({
   return (
     <html lang="zh-CN">
       <body className="flex min-h-screen flex-col">
+        <RouteLoadingBar />
         <Header />
         <main className="flex-1">
-          <ErrorBoundary>{children}</ErrorBoundary>
+          <ErrorBoundary>
+            <AnimatedPage>{children}</AnimatedPage>
+          </ErrorBoundary>
         </main>
         <footer className="border-t border-slate-200 bg-slate-50 px-6 py-4 text-center text-xs text-slate-500">
           {APP_NAME} · {APP_NAME_ZH}（{TAGLINE}）— 公益开源项目，仅用于学习与研究用途

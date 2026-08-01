@@ -29,3 +29,54 @@ body {
 .panel-scroll::-webkit-scrollbar-track {
   background: transparent;
 }
+
+@keyframes page-enter {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.page-enter {
+  animation: page-enter 0.35s ease-out both;
+}
+
+@keyframes tab-enter {
+  from {
+    opacity: 0;
+    transform: translateX(14px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+.tab-enter {
+  animation: tab-enter 0.25s ease-out both;
+}
+
+@keyframes loader-float {
+  0%,
+  100% {
+    transform: translateY(0);
+    opacity: 0.55;
+  }
+  50% {
+    transform: translateY(-10px);
+    opacity: 1;
+  }
+}
+.loader-float {
+  animation: loader-float 1.2s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .page-enter,
+  .tab-enter,
+  .loader-float {
+    animation: none;
+  }
+}
