@@ -82,6 +82,8 @@ export function SurfaceView({
   const functionsRef = useRef(functions);
   functionsRef.current = functions;
   const [zoom, setZoom] = useState(1);
+  // 坐标轴样式："classic"=改动前细线、先于曲面绘制；"prominent"=当前加粗加深、覆盖在曲面之上
+  const [axisStyle, setAxisStyle] = useState<"classic" | "prominent">("prominent");
 
   const resetView = () => {
     viewRef.current = { az: -Math.PI / 4, el: 0.55, panX: 0, panY: 0 };
@@ -160,26 +162,58 @@ export function SurfaceView({
         return { zs, zMin, zMax, hue: hueOf(f.color) };
       });
 
-      // 坐标轴（穿过世界原点）
+      // 坐标轴绘制（两种样式自选）
       const axisLen = span * 0.55;
-      const drawAxis = (end: [number, number, number], color: string, label: string) => {
+      const drawAxisLine = (end: [number, number, number], color: string, label: string, prominent: boolean) => {
         const p0 = proj(0, 0, 0);
         const p1 = proj(end[0], end[1], end[2]);
-        ctx.strokeStyle = color;
-        ctx.lineWidth = 1.5;
-        ctx.beginPath();
-        ctx.moveTo(p0.sx, p0.sy);
-        ctx.lineTo(p1.sx, p1.sy);
-        ctx.stroke();
-        ctx.fillStyle = color;
-        ctx.font = "12px sans-serif";
-        ctx.textAlign = "left";
-        ctx.textBaseline = "bottom";
-        ctx.fillText(label, p1.sx + 4, p1.sy);
+        if (prominent) {
+          // 加粗加深样式：浅色光晕 + 深色粗线，最后覆盖在曲面上方
+          ctx.strokeStyle = "rgba(255,255,255,0.85)";
+          ctx.lineWidth = 5;
+          ctx.lineCap = "round";
+          ctx.beginPath();
+          ctx.moveTo(p0.sx, p0.sy);
+          ctx.lineTo(p1.sx, p1.sy);
+          ctx.stroke();
+          ctx.strokeStyle = color;
+          ctx.lineWidth = 2.5;
+          ctx.beginPath();
+          ctx.moveTo(p0.sx, p0.sy);
+          ctx.lineTo(p1.sx, p1.sy);
+          ctx.stroke();
+          ctx.font = "bold 13px sans-serif";
+          ctx.textAlign = "left";
+          ctx.textBaseline = "bottom";
+          ctx.lineWidth = 3;
+          ctx.strokeStyle = "rgba(255,255,255,0.85)";
+          ctx.strokeText(label, p1.sx + 4, p1.sy);
+          ctx.fillStyle = color;
+          ctx.fillText(label, p1.sx + 4, p1.sy);
+        } else {
+          // 改动前经典样式：细线、先于曲面绘制，会被曲面部分覆盖
+          ctx.strokeStyle = color;
+          ctx.lineWidth = 1.5;
+          ctx.lineCap = "butt";
+          ctx.beginPath();
+          ctx.moveTo(p0.sx, p0.sy);
+          ctx.lineTo(p1.sx, p1.sy);
+          ctx.stroke();
+          ctx.fillStyle = color;
+          ctx.font = "12px sans-serif";
+          ctx.textAlign = "left";
+          ctx.textBaseline = "bottom";
+          ctx.fillText(label, p1.sx + 4, p1.sy);
+        }
       };
-      drawAxis([axisLen, 0, 0], "#dc2626", "x");
-      drawAxis([0, axisLen, 0], "#059669", "y");
-      drawAxis([0, 0, axisLen], "#2563eb", "z");
+      const drawAxes = (prominent: boolean) => {
+        drawAxisLine([axisLen, 0, 0], prominent ? "#b91c1c" : "#dc2626", "x", prominent);
+        drawAxisLine([0, axisLen, 0], prominent ? "#047857" : "#059669", "y", prominent);
+        drawAxisLine([0, 0, axisLen], prominent ? "#1d4ed8" : "#2563eb", "z", prominent);
+      };
+
+      // 经典样式：先绘制坐标轴，再画曲面
+      if (axisStyle === "classic") drawAxes(false);
 
       // 四边形网格（画家算法）
       for (const layer of layers) {
@@ -229,6 +263,9 @@ export function SurfaceView({
           ctx.stroke();
         }
       }
+
+      // 加粗加深样式：最后再绘制一次坐标轴，覆盖在曲面之上
+      if (axisStyle === "prominent") drawAxes(true);
 
       ctx.fillStyle = "#64748b";
       ctx.font = "11px sans-serif";
@@ -297,7 +334,7 @@ export function SurfaceView({
       canvas.removeEventListener("wheel", onWheel);
       canvas.removeEventListener("contextmenu", onContextMenu);
     };
-  }, [zoom, domain, grid]);
+  }, [zoom, domain, grid, axisStyle]);
 
   return (
     <div className="relative h-full w-full">
@@ -331,6 +368,18 @@ export function SurfaceView({
           className="flex h-7 items-center justify-center rounded-full px-2 text-xs text-slate-600 hover:bg-slate-100"
         >
           重置
+        </button>
+        <button
+          type="button"
+          title={axisStyle === "prominent" ? "切换到改动前的细线坐标轴" : "切换到加粗加深坐标轴"}
+          onClick={() => setAxisStyle((s) => (s === "prominent" ? "classic" : "prominent"))}
+          className={`flex h-7 items-center justify-center rounded-full px-2 text-xs transition-colors ${
+            axisStyle === "prominent"
+              ? "bg-primary-600 text-white"
+              : "text-slate-600 hover:bg-slate-100"
+          }`}
+        >
+          {axisStyle === "prominent" ? "轴:加粗" : "轴:细线"}
         </button>
       </div>
     </div>
