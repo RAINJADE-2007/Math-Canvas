@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { MultivariateFunction } from "@/types";
 import { createBivariateFunction } from "@/math-engine/middle-school/multivariate/evaluate";
 
@@ -72,6 +72,7 @@ export function SurfaceView({
   const dragRef = useRef<{ x: number; y: number } | null>(null);
   const functionsRef = useRef(functions);
   functionsRef.current = functions;
+  const [zoom, setZoom] = useState(1);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -102,7 +103,7 @@ export function SurfaceView({
       }
 
       const { az, el } = viewRef.current;
-      const scale = (Math.min(w, h) * 0.3) / DOMAIN;
+      const scale = (Math.min(w, h) * 0.3 * zoom) / DOMAIN;
       const cx = w / 2;
       const cy = h / 2;
 
@@ -210,12 +211,18 @@ export function SurfaceView({
       ctx.font = "11px sans-serif";
       ctx.textAlign = "left";
       ctx.textBaseline = "top";
-      ctx.fillText("拖动鼠标旋转视角", 8, 8);
+      ctx.fillText("拖动旋转 · 滚轮缩放", 8, 8);
     };
 
     render();
     const ro = new ResizeObserver(render);
     ro.observe(canvas);
+
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      const factor = e.deltaY < 0 ? 1.1 : 0.9;
+      setZoom((z) => Math.min(4, Math.max(0.4, z * factor)));
+    };
 
     const onDown = (e: PointerEvent) => {
       dragRef.current = { x: e.clientX, y: e.clientY };
@@ -249,14 +256,43 @@ export function SurfaceView({
     canvas.addEventListener("pointermove", onMove);
     canvas.addEventListener("pointerup", onUp);
     canvas.addEventListener("pointercancel", onUp);
+    canvas.addEventListener("wheel", onWheel, { passive: false });
     return () => {
       ro.disconnect();
       canvas.removeEventListener("pointerdown", onDown);
       canvas.removeEventListener("pointermove", onMove);
       canvas.removeEventListener("pointerup", onUp);
       canvas.removeEventListener("pointercancel", onUp);
+      canvas.removeEventListener("wheel", onWheel);
     };
-  }, []);
+  }, [zoom]);
 
-  return <canvas ref={canvasRef} className={className} style={{ touchAction: "none", cursor: "grab" }} />;
+  return (
+    <div className="relative h-full w-full">
+      <canvas
+        ref={canvasRef}
+        className={`${className ?? ""} h-full w-full`}
+        style={{ touchAction: "none", cursor: "grab" }}
+      />
+      <div className="absolute bottom-2 right-2 z-10 flex items-center gap-0.5 rounded-full border border-slate-200 bg-white/90 p-0.5 shadow-sm">
+        <button
+          type="button"
+          title="缩小"
+          onClick={() => setZoom((z) => Math.min(4, Math.max(0.4, z * 0.8)))}
+          className="flex h-7 w-7 items-center justify-center rounded-full text-base text-slate-600 hover:bg-slate-100"
+        >
+          −
+        </button>
+        <span className="min-w-10 px-1 text-center text-xs text-slate-500">{Math.round(zoom * 100)}%</span>
+        <button
+          type="button"
+          title="放大"
+          onClick={() => setZoom((z) => Math.min(4, Math.max(0.4, z * 1.25)))}
+          className="flex h-7 w-7 items-center justify-center rounded-full text-base text-slate-600 hover:bg-slate-100"
+        >
+          ＋
+        </button>
+      </div>
+    </div>
+  );
 }
