@@ -96,8 +96,8 @@ function ensureParameters(
         id: name,
         name,
         value: 1,
-        min: -10,
-        max: 10,
+        min: -100,
+        max: 100,
         step: 0.1,
       };
     }
@@ -151,6 +151,7 @@ interface MathCanvasActions {
   resetParameters: () => void;
 
   setExpressionTranslation: (id: string, translation: { dx: number; dy: number }) => void;
+  setExpressionRotation: (id: string, angle: number) => void;
 
   setDerivativeResult: (expressionId: string, result: DerivativeResult) => void;
   removeDerivativeResult: (expressionId: string) => void;
@@ -417,6 +418,13 @@ export const useMathCanvasStore = create<MathCanvasStore>()(
         set((state) => ({
           expressions: state.expressions.map((e) =>
             e.id === id ? { ...e, translation, updatedAt: Date.now() } : e,
+          ),
+        })),
+
+      setExpressionRotation: (id, angle) =>
+        set((state) => ({
+          expressions: state.expressions.map((e) =>
+            e.id === id ? { ...e, rotation: { angle }, updatedAt: Date.now() } : e,
           ),
         })),
 

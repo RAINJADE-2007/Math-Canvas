@@ -125,6 +125,8 @@ export function RightPanel() {
 
               <TranslationSection expression={selectedExpression} />
 
+              <RotationSection expression={selectedExpression} />
+
               <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
                 <div className="mb-2 flex items-center gap-2 text-sm font-medium text-slate-700">
                   <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: selectedExpression.color }} />
@@ -367,6 +369,101 @@ function GeometryEquationEditor({ obj }: { obj: GeometryObject }) {
           </p>
         </>
       ) : null}
+    </div>
+  );
+}
+
+function RotationSection({ expression }: { expression: MathExpression }) {
+  const setExpressionRotation = useMathCanvasStore((s) => s.setExpressionRotation);
+  const [angleValue, setAngleValue] = useState("");
+
+  const angle = expression.rotation?.angle ?? 0;
+  const hasRotation = angle !== 0;
+
+  useEffect(() => {
+    setAngleValue(String(angle));
+  }, [angle]);
+
+  const presets = [30, 45, 60, 90, -30, -90, 180];
+
+  function update(next: number) {
+    setExpressionRotation(expression.id, Number.isFinite(next) ? next : 0);
+  }
+
+  function describe(deg: number): string {
+    const v = deg % 360;
+    if (v === 0) return "未旋转";
+    const rounded = Math.abs(v) < 1e-9 ? 0 : v;
+    return `绕原点旋转 ${rounded}°`;
+  }
+
+  return (
+    <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+      <div className="mb-2 flex items-center gap-2 text-sm font-medium text-slate-700">
+        <span className="h-1.5 w-1.5 rounded-full bg-primary-500" />
+        图像旋转
+      </div>
+      <div className="flex flex-wrap items-center gap-3">
+        <input
+          type="number"
+          step="1"
+          value={angleValue}
+          onChange={(e) => {
+            setAngleValue(e.target.value);
+            update(parseFloat(e.target.value));
+          }}
+          className="w-24 rounded border border-slate-300 px-2 py-1 font-mono text-xs outline-none focus:border-primary-500"
+        />
+        <span className="text-xs text-slate-500">°</span>
+        <input
+          type="range"
+          min={-180}
+          max={180}
+          step={1}
+          value={angle}
+          onChange={(e) => {
+            const v = Number(e.target.value);
+            setAngleValue(String(v));
+            update(v);
+          }}
+          className="w-36 accent-primary-600"
+        />
+      </div>
+      <div className="mt-2 flex flex-wrap items-center gap-1.5">
+        {presets.map((deg) => (
+          <button
+            key={deg}
+            type="button"
+            onClick={() => {
+              setAngleValue(String(deg));
+              update(deg);
+            }}
+            className={`rounded border px-2 py-0.5 text-xs transition-colors ${
+              Math.abs(angle - deg) < 1e-6
+                ? "border-primary-300 bg-primary-600 text-white"
+                : "border-slate-300 bg-white text-slate-600 hover:border-primary-300 hover:text-primary-700"
+            }`}
+          >
+            {deg}°
+          </button>
+        ))}
+      </div>
+      <p className="mt-2 text-xs text-slate-500">{describe(angle)}</p>
+      {hasRotation ? (
+        <button
+          type="button"
+          onClick={() => {
+            setAngleValue("0");
+            update(0);
+          }}
+          className="mt-1 rounded-md px-3 py-1 text-xs text-slate-500 hover:bg-slate-100"
+        >
+          重置旋转
+        </button>
+      ) : null}
+      <p className="mt-2 text-xs text-slate-400">
+        绕原点逆时针旋转函数图像；旋转后图像可能不再是函数，仅作图像观察。
+      </p>
     </div>
   );
 }

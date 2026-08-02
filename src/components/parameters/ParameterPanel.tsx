@@ -2,6 +2,7 @@
 
 import { useMathCanvasStore } from "@/store/useMathCanvasStore";
 import { MAX_PARAMETERS } from "@/constants/app";
+import { PARAMETER_PRESETS } from "@/constants/math";
 
 export function ParameterPanel() {
   const parameters = useMathCanvasStore((s) => s.parameters);
@@ -47,7 +48,7 @@ export function ParameterPanel() {
           <div key={param.id} className="rounded-lg border border-slate-200 bg-white p-3">
             <div className="flex items-center justify-between">
               <span className="font-mono text-sm font-semibold text-primary-700">{param.name}</span>
-              <span className="font-mono text-sm text-slate-600">{param.value.toFixed(2)}</span>
+              <span className="font-mono text-sm text-slate-600">{param.value.toFixed(4)}</span>
             </div>
             <input
               type="range"
@@ -62,6 +63,33 @@ export function ParameterPanel() {
               <span>{param.min}</span>
               <span>步长 {param.step}</span>
               <span>{param.max}</span>
+            </div>
+            <div className="mt-2 flex flex-wrap items-center gap-1.5">
+              <input
+                type="number"
+                step={param.step}
+                value={param.value}
+                onChange={(e) => setParameterValue(param.name, Number(e.target.value))}
+                className="w-24 rounded border border-slate-300 px-2 py-1 font-mono text-xs outline-none focus:border-primary-500"
+              />
+              <span className="text-xs text-slate-400">精确输入</span>
+            </div>
+            <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+              <span className="text-xs text-slate-400">快捷值：</span>
+              {PARAMETER_PRESETS.map((preset) => (
+                <button
+                  key={preset.label}
+                  type="button"
+                  onClick={() => setParameterValue(param.name, preset.value)}
+                  className={`rounded border px-2 py-0.5 text-xs transition-colors ${
+                    Math.abs(param.value - preset.value) < 1e-9
+                      ? "border-primary-300 bg-primary-600 text-white"
+                      : "border-slate-300 bg-white text-slate-600 hover:border-primary-300 hover:text-primary-700"
+                  }`}
+                >
+                  {preset.label}
+                </button>
+              ))}
             </div>
           </div>
         ))}

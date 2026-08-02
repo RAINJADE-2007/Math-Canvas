@@ -81,6 +81,36 @@ function clearElements(board: Board, elements: El[]): void {
   elements.length = 0;
 }
 
+interface Rotation {
+  angle: number;
+  c: number;
+  s: number;
+}
+
+function rotationOf(expr: { rotation?: { angle: number } }): Rotation {
+  const angle = expr.rotation?.angle ?? 0;
+  const rad = (angle * Math.PI) / 180;
+  return { angle, c: Math.cos(rad), s: Math.sin(rad) };
+}
+
+function rotateChunks(chunks: SampleChunk[], r: Rotation): SampleChunk[] {
+  if (!r.angle) return chunks;
+  return chunks.map((chunk) => {
+    const xs: number[] = new Array(chunk.xs.length);
+    const ys: number[] = new Array(chunk.ys.length);
+    for (let i = 0; i < chunk.xs.length; i++) {
+      xs[i] = chunk.xs[i] * r.c - chunk.ys[i] * r.s;
+      ys[i] = chunk.xs[i] * r.s + chunk.ys[i] * r.c;
+    }
+    return { xs, ys };
+  });
+}
+
+function rotateXY(x: number, y: number, r: Rotation): [number, number] {
+  if (!r.angle) return [x, y];
+  return [x * r.c - y * r.s, x * r.s + y * r.c];
+}
+
 interface CurveInfo {
   elements: El[];
   chunks: SampleChunk[];
@@ -158,7 +188,7 @@ function curveSignature(): string {
     .map((k) => `${k}=${s.parameters[k].value}`)
     .join(",");
   const exprs = s.expressions
-    .map((e) => `${e.id}|${e.normalizedExpression}|${e.visible}|${e.color}|${e.translation?.dx ?? 0}|${e.translation?.dy ?? 0}`)
+    .map((e) => `${e.id}|${e.normalizedExpression}|${e.visible}|${e.color}|${e.translation?.dx ?? 0}|${e.translation?.dy ?? 0}|${e.rotation?.angle ?? 0}`)
     .join(";");
   const derivs = Object.keys(s.derivativeResults)
     .sort()
@@ -733,9 +763,11 @@ const derivativeVisibility = useMathCanvasStore((s) => s.derivativeVisibility);
               if (typeof v === "number") paramValues[p] = v;
             }
             const sampled = sampleFunction(safeFn, { min: xMin, max: xMax, steps: SAMPLE_STEPS }, paramValues);
+            const rot = rotationOf(expr);
+            const drawnChunks = rotateChunks(sampled.chunks, rot);
 
             const elements: El[] = [];
-            for (const chunk of sampled.chunks) {
+            for (const chunk of drawnChunks) {
               const el = board.create("curve", [chunk.xs, chunk.ys], {
                 strokeColor: expr.color,
                 strokeWidth: 2.5,
@@ -783,8 +815,8 @@ const derivativeVisibility = useMathCanvasStore((s) => s.derivativeVisibility);
               elements.push(el);
             }
 
-            if (s.canvasSettings.showLabels && sampled.chunks.length > 0) {
-              const lastChunk = sampled.chunks[sampled.chunks.length - 1];
+            if (s.canvasSettings.showLabels && drawnChunks.length > 0) {
+              const lastChunk = drawnChunks[drawnChunks.length - 1];
               const lastIndex = lastChunk.xs.length - 1;
               const labelX = lastChunk.xs[lastIndex];
               const labelY = lastChunk.ys[lastIndex];
@@ -800,7 +832,7 @@ const derivativeVisibility = useMathCanvasStore((s) => s.derivativeVisibility);
               }
             }
 
-            controller!.curves.set(expr.id, { elements, chunks: sampled.chunks, numericFn });
+            controller!.curves.set(expr.id, { elements, chunks: drawnChunks, numericFn });
             controller!.fns.set(expr.id, numericFn);
           }
 
@@ -820,7 +852,9 @@ const derivativeVisibility = useMathCanvasStore((s) => s.derivativeVisibility);
               evaluate: (x: number, params?: Record<string, number>) => dFn.evaluate(x - dx, params ?? {}),
             };
             const sampled = sampleFunction(dSafe, { min: xMin, max: xMax, steps: SAMPLE_STEPS }, paramValues);
-            for (const chunk of sampled.chunks) {
+            const rot = rotationOf(expr);
+            const drawnChunks = rotateChunks(sampled.chunks, rot);
+            for (const chunk of drawnChunks) {
               const el = board.create("curve", [chunk.xs, chunk.ys], {
                 strokeColor: DERIVATIVE_COLOR,
                 strokeWidth: 2,
@@ -1185,14 +1219,16 @@ function drawPinnedPoints(
     const numericFn = curveInfo.numericFn;
     const y = numericFn(point.x);
     if (!Number.isFinite(y)) continue;
-    const chunk = chunkForX(curveInfo, point.x);
-    const curveEl = chunk ? findCurveForX(curveInfo, point.x) : undefined;
+    const rot = rotationOf(expr);
+    const [px, py] = rotateXY(point.x, y, rot);
+    const chunk = chunkForX(curveInfo, px);
+    const curveEl = chunk ? findCurveForX(curveInfo, px) : undefined;
     if (!chunk || !curveEl) continue;
 
     const elements: El[] = [];
     let glider: JXG.Point | undefined;
     try {
-      glider = board.create("glider", [point.x, y, curveEl], {
+      glider = board.create("glider", [px, py, curveEl], {
         size: 4,
         face: "circle",
         strokeColor: expr.color,
@@ -1206,7 +1242,7 @@ function drawPinnedPoints(
 
     let text: JXG.Text | undefined;
     try {
-      text = board.create("text", [point.x, y + 0.45, `(${fmt(point.x)}, ${fmt(y)})`], {
+      text = board.create("text", [px, py + 0.45, `(${fmt(point.x)}, ${fmt(y)})`], {
         fontSize: 10,
         strokeColor: expr.color,
         anchorY: "bottom",
@@ -1219,8 +1255,13 @@ function drawPinnedPoints(
 
     if (glider) {
       try {
+        const unrotatedX = () => {
+          const X = glider?.X ? glider.X() : px;
+          const Y = glider?.Y ? glider.Y() : py;
+          return X * rot.c + Y * rot.s;
+        };
         glider.on("drag", () => {
-          const gx = glider?.X ? glider.X() : point.x;
+          const gx = unrotatedX();
           if (!Number.isFinite(gx)) return;
           const gy = numericFn(gx);
           if (Number.isFinite(gy) && text && text.setText) {
@@ -1228,7 +1269,7 @@ function drawPinnedPoints(
           }
         });
         glider.on("up", () => {
-          const gx = glider?.X ? glider.X() : point.x;
+          const gx = unrotatedX();
           if (!Number.isFinite(gx)) return;
           useMathCanvasStore.getState().updatePinnedPoint(point.id, { x: gx });
         });
@@ -1532,11 +1573,13 @@ function drawCriticalPoints(board: Board, controller: BoardController, s: Return
     const fn = controller.fns.get(expr.id) ?? makeNumericFn(expr, s.parameters);
     if (!fn) continue;
     const dx = expr.translation?.dx ?? 0;
+    const rot = rotationOf(expr);
     for (const cp of derivative.criticalPoints) {
       const x = cp + dx;
       const y = fn(x);
       if (!Number.isFinite(y)) continue;
-      const el = board.create("point", [x, y], {
+      const [px, py] = rotateXY(x, y, rot);
+      const el = board.create("point", [px, py], {
         size: 2.5,
         face: "cross",
         strokeColor: "#475569",
@@ -1545,7 +1588,7 @@ function drawCriticalPoints(board: Board, controller: BoardController, s: Return
 
       if (s.canvasSettings.showMonotonicityHint) {
         try {
-          const text = board.create("text", [x, y, `${x.toFixed(2)}`], {
+          const text = board.create("text", [px, py, `${x.toFixed(2)}`], {
             fontSize: 10,
             strokeColor: "#475569",
             anchorY: "bottom",
@@ -1584,8 +1627,13 @@ function derivativeAtFor(board: Board, controller: BoardController, exprId: stri
   const s = useMathCanvasStore.getState();
   const expr = s.expressions.find((e) => e.id === exprId);
   if (!expr) return undefined;
+  const paramValues: Record<string, number> = {};
+  for (const p of expr.parameters) {
+    const v = s.parameters[p]?.value;
+    if (typeof v === "number") paramValues[p] = v;
+  }
   const rawFn = makeRawNumericFn(expr, s.parameters);
-  const computed = computeDerivative({ expression: expr.normalizedExpression, fn: rawFn });
+  const computed = computeDerivative({ expression: expr.normalizedExpression, fn: rawFn, params: paramValues });
   const dx = expr.translation?.dx ?? 0;
   const derivativeAt = dx === 0 ? computed.derivativeAt : (x: number) => computed.derivativeAt(x - dx);
   controller.derivativeFns.set(exprId, derivativeAt);
@@ -1631,12 +1679,14 @@ function drawTangents(board: Board, controller: BoardController): void {
 
     const derivativeAt = derivativeAtFor(board, controller, expr.id);
     const secant = derivative.secant;
+    const rot = rotationOf(expr);
     const baseY = Number.isFinite(curveInfo.numericFn(tangent.x)) ? curveInfo.numericFn(tangent.x) : tangent.y;
     const baseSlope =
       derivativeAt && Number.isFinite(derivativeAt(tangent.x)) ? derivativeAt(tangent.x) : tangent.slope;
+    const [baseX, baseYRot] = rotateXY(tangent.x, baseY, rot);
 
     let tangentInfo = controller.tangentElements.get(expr.id);
-    const curveEl = findCurveForX(curveInfo, tangent.x);
+    const curveEl = findCurveForX(curveInfo, baseX);
     const shouldRebuild = !tangentInfo || !tangentInfo.glider || (curveEl !== undefined && !controller.dragging);
 
     if (shouldRebuild) {
@@ -1648,7 +1698,7 @@ function drawTangents(board: Board, controller: BoardController): void {
       let glider: JXG.Point | undefined;
       if (curveEl) {
         try {
-          glider = board.create("glider", [tangent.x, baseY, curveEl], {
+          glider = board.create("glider", [baseX, baseYRot, curveEl], {
             name: "P",
             size: 4,
             face: "circle",
@@ -1659,7 +1709,8 @@ function drawTangents(board: Board, controller: BoardController): void {
           try {
             glider.on("drag", () => {
               controller.dragging = true;
-              const gx = glider?.X ? glider.X() : tangent.x;
+              const gx =
+                (glider?.X ? glider.X() : baseX) * rot.c + (glider?.Y ? glider.Y() : baseYRot) * rot.s;
               if (!Number.isFinite(gx) || !derivativeAt) return;
               const numericFn = curveInfo.numericFn;
               const newTangent = calculateTangent(gx, numericFn, derivativeAt);
@@ -1682,7 +1733,9 @@ function drawTangents(board: Board, controller: BoardController): void {
         }
       }
 
-      const tangentLine = board.create("line", [[tangent.x, baseY], [tangent.x + 1, baseY + (Number.isFinite(baseSlope) ? baseSlope : 0)]], {
+      const slopeVal = Number.isFinite(baseSlope) ? baseSlope : 0;
+      const [tlEndX, tlEndY] = rotateXY(tangent.x + 1, baseY + slopeVal, rot);
+      const tangentLine = board.create("line", [[baseX, baseYRot], [tlEndX, tlEndY]], {
         strokeColor: "#dc2626",
         strokeWidth: 2,
         dash: 2,
@@ -1690,8 +1743,12 @@ function drawTangents(board: Board, controller: BoardController): void {
         withLabel: false,
       }) as JXG.Line;
 
+      const secantEnd =
+        secant && Number.isFinite(secant.x2) && Number.isFinite(secant.y2)
+          ? rotateXY(secant.x2, secant.y2, rot)
+          : rotateXY(tangent.x + 2, baseY, rot);
       const secantLine = showSecant
-        ? (board.create("line", [[tangent.x, baseY], [secant?.x2 ?? tangent.x + 2, secant?.y2 ?? baseY]], {
+        ? (board.create("line", [[baseX, baseYRot], secantEnd], {
             strokeColor: "#d97706",
             strokeWidth: 1.8,
             name: "割线",
@@ -1701,7 +1758,8 @@ function drawTangents(board: Board, controller: BoardController): void {
 
       let secantPoint: El | undefined;
       if (showSecant && secant && Number.isFinite(secant.x2) && Number.isFinite(secant.y2)) {
-        secantPoint = board.create("point", [secant.x2, secant.y2], {
+        const [sxp, syp] = rotateXY(secant.x2, secant.y2, rot);
+        secantPoint = board.create("point", [sxp, syp], {
           name: "Q",
           size: 3,
           face: "square",
@@ -1731,17 +1789,19 @@ function drawTangents(board: Board, controller: BoardController): void {
     }
 
     const info = tangentInfo!;
-    const activeX = info.glider ? info.glider.X() : tangent.x;
+    const activeX = info.glider
+      ? info.glider.X() * rot.c + info.glider.Y() * rot.s
+      : tangent.x;
     const numericFn = curveInfo.numericFn;
     const currentTangent = calculateTangent(activeX, numericFn, derivativeAt ?? ((_x: number) => Number.NaN));
     const currentSecant = calculateSecant(activeX, derivative.secant?.h ?? 2, numericFn);
+    const slope = Number.isFinite(currentTangent.slope) ? currentTangent.slope : 0;
+    const [bx, by] = rotateXY(activeX, currentTangent.y, rot);
+    const [lineEndX, lineEndY] = rotateXY(activeX + 1, currentTangent.y + slope, rot);
 
     try {
-      const lineEndX = activeX + 1;
-      const slope = Number.isFinite(currentTangent.slope) ? currentTangent.slope : 0;
-      const lineEndY = currentTangent.y + slope;
       if (info.tangentLine.point1 && info.tangentLine.point1.setPosition) {
-        info.tangentLine.point1.setPosition(1, [activeX, currentTangent.y]);
+        info.tangentLine.point1.setPosition(1, [bx, by]);
       }
       if (info.tangentLine.point2 && info.tangentLine.point2.setPosition) {
         info.tangentLine.point2.setPosition(1, [lineEndX, lineEndY]);
@@ -1752,11 +1812,12 @@ function drawTangents(board: Board, controller: BoardController): void {
 
     try {
       if (showSecant && info.secantLine && currentSecant && Number.isFinite(currentSecant.x2) && Number.isFinite(currentSecant.y2)) {
+        const [sx2, sy2] = rotateXY(currentSecant.x2, currentSecant.y2, rot);
         if (info.secantLine.point1 && info.secantLine.point1.setPosition) {
-          info.secantLine.point1.setPosition(1, [activeX, currentTangent.y]);
+          info.secantLine.point1.setPosition(1, [bx, by]);
         }
         if (info.secantLine.point2 && info.secantLine.point2.setPosition) {
-          info.secantLine.point2.setPosition(1, [currentSecant.x2, currentSecant.y2]);
+          info.secantLine.point2.setPosition(1, [sx2, sy2]);
         }
       }
     } catch {
@@ -1765,7 +1826,8 @@ function drawTangents(board: Board, controller: BoardController): void {
 
     try {
       if (showSecant && info.secantPoint && currentSecant && Number.isFinite(currentSecant.x2) && Number.isFinite(currentSecant.y2)) {
-        info.secantPoint.setPosition(1, [currentSecant.x2, currentSecant.y2]);
+        const [sxp2, syp2] = rotateXY(currentSecant.x2, currentSecant.y2, rot);
+        info.secantPoint.setPosition(1, [sxp2, syp2]);
       }
     } catch {
       /* ignore */

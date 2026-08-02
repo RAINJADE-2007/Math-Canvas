@@ -27,6 +27,15 @@ export const RESERVED_SYMBOLS: ReadonlySet<string> = new Set(["x", "y", ...ALLOW
 
 export const ALLOWED_SYMBOL_RE = /^[a-zA-Z][a-zA-Z0-9]*$/;
 
-export const PARAMETER_DEFAULT = { min: -10, max: 10, value: 1, step: 0.1 };
+export const PARAMETER_DEFAULT = { min: -100, max: 100, value: 1, step: 0.1 };
+
+export const PARAMETER_PRESETS: { label: string; value: number }[] = [
+  { label: "e", value: Math.E },
+  { label: "π", value: Math.PI },
+  { label: "½", value: 0.5 },
+  { label: "√2", value: Math.SQRT2 },
+  { label: "2", value: 2 },
+  { label: "-1", value: -1 },
+];
 
 export const PARAMETER_NAMES_PRIORITY = ["a", "b", "c", "k", "A", "w", "p"];

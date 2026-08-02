@@ -20,6 +20,7 @@ export function buildDerivativeResult(input: DerivativeBuildInput): DerivativeRe
   const computed = computeDerivative({
     expression: input.expression.normalizedExpression,
     fn: numericFn,
+    params: input.parameterValues,
   });
 
   let exactRoots: number[] = [];

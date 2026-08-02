@@ -49,6 +49,9 @@ export interface MathExpression {
     dx: number;
     dy: number;
   };
+  rotation?: {
+    angle: number;
+  };
   domain?: {
     min: number;
     max: number;

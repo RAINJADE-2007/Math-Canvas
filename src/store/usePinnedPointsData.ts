@@ -61,7 +61,12 @@ export function buildPinnedPointInfos(
     let derivativeValid = false;
     if (derivativeResults[expression.id]) {
       const rawFn = makeRawNumericFn(expression, parameters);
-      const computed = computeDerivative({ expression: expression.normalizedExpression, fn: rawFn });
+      const paramValues: Record<string, number> = {};
+      for (const p of expression.parameters) {
+        const v = parameters[p]?.value;
+        if (typeof v === "number") paramValues[p] = v;
+      }
+      const computed = computeDerivative({ expression: expression.normalizedExpression, fn: rawFn, params: paramValues });
       const dx = expression.translation?.dx ?? 0;
       const dv = computed.derivativeAt(point.x - dx);
       if (Number.isFinite(dv)) {
