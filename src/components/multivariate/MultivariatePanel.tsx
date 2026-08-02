@@ -3,8 +3,8 @@
 import { useState } from "react";
 import { useMathCanvasStore } from "@/store/useMathCanvasStore";
 import { parseMultivariateInput } from "@/math-engine/middle-school/multivariate/parse";
+import { sliceTo2D } from "@/math-engine/middle-school/multivariate/slice";
 import { LatexView } from "@/components/common/LatexView";
-import { SurfaceView } from "@/components/multivariate/SurfaceView";
 import type { MultivariateFunction } from "@/types";
 
 export function MultivariatePanel() {
@@ -12,12 +12,10 @@ export function MultivariatePanel() {
   const addMultivariateFunction = useMathCanvasStore((s) => s.addMultivariateFunction);
   const removeMultivariateFunction = useMathCanvasStore((s) => s.removeMultivariateFunction);
   const toggleMultivariateVisibility = useMathCanvasStore((s) => s.toggleMultivariateVisibility);
-  const setMultivariateColor = useMathCanvasStore((s) => s.setMultivariateColor);
 
   const [input, setInput] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [preview, setPreview] = useState<{ ok: boolean; latex?: string; error?: string } | null>(null);
-  const [viewing, setViewing] = useState<MultivariateFunction | null>(null);
 
   function handleInputChange(value: string) {
     setInput(value);
@@ -76,7 +74,7 @@ export function MultivariatePanel() {
         ) : null}
         {error ? <p className="mt-2 text-sm text-red-600">{error}</p> : null}
         <p className="mt-2 text-xs text-slate-400">
-          支持 x、y 两个自变量，可用常量 π/e 与函数 sin、cos、sqrt 等；默认绘制范围 x、y ∈ [-4, 4]。
+          支持 x、y 两个自变量，可用常量 π/e 与函数 sin、cos、sqrt 等；默认绘制范围 x、y ∈ [-4, 4]。3D 图像请在画布右上角切换到「3D」查看。
         </p>
       </div>
 
@@ -125,58 +123,98 @@ export function MultivariatePanel() {
                 <LatexView latex={item.latex} />
               </div>
 
-              <div className="mt-2 flex flex-wrap items-center gap-2">
-                <input
-                  type="color"
-                  value={item.color}
-                  onChange={(e) => setMultivariateColor(item.id, e.target.value)}
-                  className="h-6 w-9 cursor-pointer rounded border border-slate-200"
-                  title="修改颜色"
-                />
-                <button
-                  type="button"
-                  onClick={() => setViewing(item)}
-                  className="rounded-md bg-primary-600 px-3 py-1 text-xs font-medium text-white transition-colors hover:bg-primary-700"
-                >
-                  查看 3D 图像
-                </button>
-              </div>
+              <SliceControls item={item} />
             </li>
           ))}
         </ul>
       )}
+    </div>
+  );
+}
 
-      {viewing ? (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4"
-          onClick={() => setViewing(null)}
+function SliceControls({ item }: { item: MultivariateFunction }) {
+  const addExpression = useMathCanvasStore((s) => s.addExpression);
+  const setMultivariateColor = useMathCanvasStore((s) => s.setMultivariateColor);
+  const [axis, setAxis] = useState<"x" | "y">("y");
+  const [value, setValue] = useState("0");
+  const [result, setResult] = useState<{ ok: boolean; latex?: string; expression?: string; error?: string } | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+
+  function handleSlice() {
+    const v = parseFloat(value);
+    if (!Number.isFinite(v)) {
+      setResult(null);
+      setNotice("请输入有效的数值");
+      return;
+    }
+    const replacements: Record<string, string> =
+      axis === "y" ? { y: String(v) } : { x: String(v), y: "x" };
+    const res = sliceTo2D(item.expression, replacements);
+    setResult(res);
+    setNotice(null);
+    if (!res.ok) {
+      setNotice(res.error ?? "切片失败");
+      return;
+    }
+    const added = addExpression(res.expression);
+    setNotice(added.ok ? "已生成切片曲线并添加到 2D 画布" : (added.error ?? "添加切片曲线失败"));
+  }
+
+  return (
+    <div className="mt-2 rounded-md border border-slate-200 bg-slate-50 p-2.5">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-xs text-slate-500">切片为二维：</span>
+        <select
+          value={axis}
+          onChange={(e) => {
+            setAxis(e.target.value as "x" | "y");
+            setResult(null);
+            setNotice(null);
+          }}
+          className="rounded border border-slate-300 bg-white px-2 py-1 text-xs text-slate-700 outline-none focus:border-primary-500"
         >
-          <div
-            className="flex h-[85vh] w-full max-w-4xl flex-col rounded-lg border border-slate-200 bg-white shadow-xl"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
-              <div className="min-w-0">
-                <span className="text-sm font-semibold text-slate-700">3D 曲面图像</span>
-                {items.filter((f) => f.visible).map((f) => (
-                  <span key={f.id} className="ml-2 font-mono text-xs text-slate-500">
-                    z = {f.expression}
-                  </span>
-                ))}
-              </div>
-              <button
-                type="button"
-                onClick={() => setViewing(null)}
-                className="rounded p-1 text-sm text-slate-400 hover:bg-slate-100 hover:text-slate-600"
-              >
-                ×
-              </button>
-            </div>
-            <div className="min-h-0 flex-1 bg-slate-50 p-2">
-              <SurfaceView functions={items} className="h-full w-full" />
-            </div>
-          </div>
+          <option value="y">固定 y（沿 x 方向）</option>
+          <option value="x">固定 x（沿 y 方向）</option>
+        </select>
+        <label className="flex items-center gap-1 text-xs text-slate-500">
+          {axis === "y" ? "y" : "x"}
+          <input
+            type="number"
+            step="0.1"
+            value={value}
+            onChange={(e) => {
+              setValue(e.target.value);
+              setResult(null);
+              setNotice(null);
+            }}
+            className="w-20 rounded border border-slate-300 px-2 py-1 font-mono text-xs outline-none focus:border-primary-500"
+          />
+        </label>
+        <button
+          type="button"
+          onClick={handleSlice}
+          className="rounded-md bg-primary-600 px-3 py-1 text-xs font-medium text-white transition-colors hover:bg-primary-700"
+        >
+          切片为 2D
+        </button>
+        <input
+          type="color"
+          value={item.color}
+          onChange={(e) => setMultivariateColor(item.id, e.target.value)}
+          className="h-6 w-8 cursor-pointer rounded border border-slate-200"
+          title="修改颜色"
+        />
+      </div>
+      {result && result.ok ? (
+        <div className="mt-2 flex flex-wrap items-center gap-2 rounded bg-white px-2 py-1.5 text-xs">
+          <span className="text-slate-400">
+            切片曲线 {axis === "y" ? `y=${value}` : `x=${value}`}：
+          </span>
+          <LatexView latex={result.latex ?? ""} />
         </div>
+      ) : null}
+      {notice ? (
+        <p className={`mt-1.5 text-xs ${notice.startsWith("已") ? "text-green-700" : "text-amber-700"}`}>{notice}</p>
       ) : null}
     </div>
   );
