@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useMathCanvasStore } from "@/store/useMathCanvasStore";
 import { ToolBar } from "@/components/canvas/ToolBar";
 import { MathCanvasBoard } from "@/components/canvas/MathCanvasBoard";
 import { RightPanel } from "@/components/canvas/RightPanel";
@@ -13,6 +14,7 @@ import { GeometryPanel } from "@/components/geometry/GeometryPanel";
 import { StatisticsPanel } from "@/components/statistics/StatisticsPanel";
 import { DerivativePanel } from "@/components/derivative/DerivativePanel";
 import { MultivariatePanel } from "@/components/multivariate/MultivariatePanel";
+import { SurfaceView } from "@/components/multivariate/SurfaceView";
 import { MobileNotice } from "@/components/common/MobileNotice";
 
 type BottomTab =
@@ -38,6 +40,8 @@ const TABS: { id: BottomTab; label: string }[] = [
 
 export function CanvasWorkspace() {
   const [activeTab, setActiveTab] = useState<BottomTab>("expressions");
+  const [viewMode, setViewMode] = useState<"2d" | "3d">("2d");
+  const multivariateFunctions = useMathCanvasStore((s) => s.multivariateFunctions);
 
   return (
     <div className="mx-auto flex h-[calc(100vh-108px)] max-w-[1600px] flex-col px-2 py-2">
@@ -49,8 +53,34 @@ export function CanvasWorkspace() {
 
       <div className="grid min-h-0 flex-1 grid-cols-1 grid-rows-[minmax(0,1fr)] gap-2 lg:grid-cols-[48px_1fr_300px]">
         <ToolBar />
-        <div className="min-w-0 min-h-0 overflow-hidden rounded-lg border border-slate-200 bg-white shadow-card">
-          <MathCanvasBoard />
+        <div className="relative min-w-0 min-h-0 overflow-hidden rounded-lg border border-slate-200 bg-white shadow-card">
+          {viewMode === "3d" ? (
+            <SurfaceView functions={multivariateFunctions} className="h-full w-full" />
+          ) : (
+            <MathCanvasBoard />
+          )}
+          <div className="absolute right-2 top-2 z-20 flex items-center gap-0.5 rounded-full border border-slate-200 bg-white/95 p-0.5 shadow-sm">
+            <button
+              type="button"
+              onClick={() => setViewMode("2d")}
+              title="二维函数图像"
+              className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
+                viewMode === "2d" ? "bg-primary-600 text-white" : "text-slate-500 hover:text-primary-600"
+              }`}
+            >
+              2D
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewMode("3d")}
+              title="三维曲面图像（多元函数）"
+              className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
+                viewMode === "3d" ? "bg-primary-600 text-white" : "text-slate-500 hover:text-primary-600"
+              }`}
+            >
+              3D
+            </button>
+          </div>
         </div>
         <RightPanel />
       </div>

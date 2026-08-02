@@ -97,7 +97,7 @@ export function SurfaceView({
         ctx.font = "13px sans-serif";
         ctx.textAlign = "center";
         ctx.textBaseline = "middle";
-        ctx.fillText("暂无可见的多元函数，请在上方添加", w / 2, h / 2);
+        ctx.fillText("暂无可见的多元函数，请在下方「多元函数」页签中添加", w / 2, h / 2);
         return;
       }
 
