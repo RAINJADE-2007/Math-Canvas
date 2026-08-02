@@ -12,11 +12,13 @@ import { SolverPanel } from "@/components/solver/SolverPanel";
 import { GeometryPanel } from "@/components/geometry/GeometryPanel";
 import { StatisticsPanel } from "@/components/statistics/StatisticsPanel";
 import { DerivativePanel } from "@/components/derivative/DerivativePanel";
+import { MultivariatePanel } from "@/components/multivariate/MultivariatePanel";
 import { MobileNotice } from "@/components/common/MobileNotice";
 
 type BottomTab =
   | "expressions"
   | "parameters"
+  | "multivariate"
   | "calculator"
   | "solver"
   | "geometry"
@@ -26,6 +28,7 @@ type BottomTab =
 const TABS: { id: BottomTab; label: string }[] = [
   { id: "expressions", label: "表达式" },
   { id: "parameters", label: "参数" },
+  { id: "multivariate", label: "多元函数" },
   { id: "calculator", label: "计算器" },
   { id: "solver", label: "方程求解" },
   { id: "geometry", label: "几何" },
@@ -73,6 +76,7 @@ export function CanvasWorkspace() {
           <div key={activeTab} className="tab-enter">
             {activeTab === "expressions" && <ExpressionPanel />}
             {activeTab === "parameters" && <ParameterPanel />}
+            {activeTab === "multivariate" && <MultivariatePanel />}
             {activeTab === "calculator" && <CalculatorPanel />}
             {activeTab === "solver" && <SolverPanel />}
             {activeTab === "geometry" && <GeometryPanel />}

@@ -12,6 +12,7 @@ import type {
   MathDataset,
   MathExpression,
   MathParameter,
+  MultivariateFunction,
   PinnedPoint,
   SavedMathCanvasDocument,
   SolutionRecord,
@@ -21,6 +22,7 @@ import type {
 import { DEFAULT_CANVAS_BOUNDS, MAX_EXPRESSIONS, MAX_PARAMETERS, PROJECT_VERSION, SCHEMA_VERSION, STORAGE_KEY } from "@/constants/app";
 import { colorForIndex } from "@/constants/colors";
 import { parseExpressionInput } from "@/math-engine/core/parser/parseExpression";
+import { parseMultivariateInput } from "@/math-engine/middle-school/multivariate/parse";
 import { buildDerivativeResult } from "@/math-engine/calculus-intro/derivative/derivativeAnalysis";
 
 const MAX_HISTORY = 50;
@@ -67,6 +69,7 @@ function defaultState(): Omit<MathCanvasState, "past" | "future"> {
     expressions: [],
     geometryObjects: [],
     datasets: [],
+    multivariateFunctions: [],
     pinnedPoints: [],
     parameters: {},
     derivativeResults: {},
@@ -141,6 +144,11 @@ interface MathCanvasActions {
 
   addDataset: (dataset: MathDataset) => void;
   removeDataset: (id: string) => void;
+
+  addMultivariateFunction: (input: string) => { ok: boolean; error?: string; item?: MultivariateFunction };
+  removeMultivariateFunction: (id: string) => void;
+  toggleMultivariateVisibility: (id: string) => void;
+  setMultivariateColor: (id: string, color: string) => void;
 
   addPinnedPoint: (expressionId: string, x: number) => void;
   updatePinnedPoint: (id: string, patch: Partial<PinnedPoint>) => void;
@@ -364,6 +372,53 @@ export const useMathCanvasStore = create<MathCanvasStore>()(
         set((state) => ({
           ...withHistory(state),
           datasets: state.datasets.filter((d) => d.id !== id),
+        })),
+
+      addMultivariateFunction: (input) => {
+        const result = parseMultivariateInput(input);
+        if (!result.ok || !result.normalizedExpression) {
+          return { ok: false, error: result.error ?? "无法解析该多元函数" };
+        }
+        let outcome: { ok: boolean; error?: string; item?: MultivariateFunction } = { ok: false, error: "添加失败" };
+        set((state) => {
+          const item: MultivariateFunction = {
+            id: uid("mv"),
+            rawInput: input.trim(),
+            latex: result.latex,
+            expression: result.normalizedExpression,
+            color: colorForIndex(state.multivariateFunctions.length),
+            visible: true,
+            createdAt: Date.now(),
+            updatedAt: Date.now(),
+          };
+          outcome = { ok: true, item };
+          return {
+            ...withHistory(state),
+            multivariateFunctions: [...state.multivariateFunctions, item],
+          };
+        });
+        return outcome;
+      },
+
+      removeMultivariateFunction: (id) =>
+        set((state) => ({
+          ...withHistory(state),
+          multivariateFunctions: state.multivariateFunctions.filter((f) => f.id !== id),
+        })),
+
+      toggleMultivariateVisibility: (id) =>
+        set((state) => ({
+          ...withHistory(state),
+          multivariateFunctions: state.multivariateFunctions.map((f) =>
+            f.id === id ? { ...f, visible: !f.visible } : f,
+          ),
+        })),
+
+      setMultivariateColor: (id, color) =>
+        set((state) => ({
+          multivariateFunctions: state.multivariateFunctions.map((f) =>
+            f.id === id ? { ...f, color, updatedAt: Date.now() } : f,
+          ),
         })),
 
       addPinnedPoint: (expressionId, x) =>

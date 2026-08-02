@@ -116,6 +116,17 @@ export interface MathDataset {
   createdAt: number;
 }
 
+export interface MultivariateFunction {
+  id: string;
+  rawInput: string;
+  latex: string;
+  expression: string;
+  color: string;
+  visible: boolean;
+  createdAt: number;
+  updatedAt: number;
+}
+
 export interface PinnedPoint {
   id: string;
   expressionId: string;
@@ -263,6 +274,7 @@ export interface MathCanvasState {
   expressions: MathExpression[];
   geometryObjects: GeometryObject[];
   datasets: MathDataset[];
+  multivariateFunctions: MultivariateFunction[];
   pinnedPoints: PinnedPoint[];
   parameters: Record<string, MathParameter>;
   derivativeResults: Record<string, DerivativeResult>;
