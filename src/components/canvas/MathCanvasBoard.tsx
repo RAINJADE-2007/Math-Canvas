@@ -63,7 +63,7 @@ function makeTranslatedSafeFunction(
     node: base.node,
     expression: base.expression,
     evaluate: (x: number, params?: Record<string, number>) => {
-      const v = base.evaluate(x - dx, params ?? paramValues);
+      const v = base.evaluate(x - dx, { ...paramValues, ...(params ?? {}) });
       return Number.isFinite(v) ? v + dy : v;
     },
     toString: () => base.toString(),
@@ -727,7 +727,12 @@ const derivativeVisibility = useMathCanvasStore((s) => s.derivativeVisibility);
             if (!expr.visible) continue;
             const numericFn = makeNumericFn(expr, s.parameters);
             const safeFn = makeTranslatedSafeFunction(expr, s.parameters);
-            const sampled = sampleFunction(safeFn, { min: xMin, max: xMax, steps: SAMPLE_STEPS });
+            const paramValues: Record<string, number> = {};
+            for (const p of expr.parameters) {
+              const v = s.parameters[p]?.value;
+              if (typeof v === "number") paramValues[p] = v;
+            }
+            const sampled = sampleFunction(safeFn, { min: xMin, max: xMax, steps: SAMPLE_STEPS }, paramValues);
 
             const elements: El[] = [];
             for (const chunk of sampled.chunks) {
@@ -800,7 +805,6 @@ const derivativeVisibility = useMathCanvasStore((s) => s.derivativeVisibility);
           }
 
           for (const expr of s.expressions) {
-            if (!expr.visible) continue;
             const derivative = s.derivativeResults[expr.id];
             if (!derivative?.derivativeExpression) continue;
             if (s.derivativeVisibility[expr.id]?.derivative === false) continue;
@@ -1525,7 +1529,7 @@ function drawCriticalPoints(board: Board, controller: BoardController, s: Return
     const derivative = s.derivativeResults[expr.id];
     if (!derivative) continue;
     if (s.derivativeVisibility[expr.id]?.criticalPoints === false) continue;
-    const fn = controller.fns.get(expr.id);
+    const fn = controller.fns.get(expr.id) ?? makeNumericFn(expr, s.parameters);
     if (!fn) continue;
     const dx = expr.translation?.dx ?? 0;
     for (const cp of derivative.criticalPoints) {
@@ -1616,7 +1620,14 @@ function drawTangents(board: Board, controller: BoardController): void {
 
     const tangent = derivative.tangent;
     const curveInfo = controller.curves.get(expr.id);
-    if (!curveInfo || !tangent) continue;
+    if (!curveInfo || !tangent) {
+      const existing = controller.tangentElements.get(expr.id);
+      if (existing) {
+        removeTangentElements(board, existing);
+        controller.tangentElements.delete(expr.id);
+      }
+      continue;
+    }
 
     const derivativeAt = derivativeAtFor(board, controller, expr.id);
     const secant = derivative.secant;
