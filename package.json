@@ -7,7 +7,9 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "test": "tsx --test tests/multivariate/*.test.ts",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "jsxgraph": "^1.9.0",
@@ -28,6 +30,7 @@
     "eslint-config-next": "^15.3.4",
     "postcss": "^8.5.3",
     "tailwindcss": "^3.4.17",
+    "tsx": "^4.23.1",
     "typescript": "^5.8.3"
   }
 }

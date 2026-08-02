@@ -3,13 +3,29 @@
 import { useEffect, useRef, useState } from "react";
 import type { MultivariateFunction } from "@/types";
 import { createBivariateFunction } from "@/math-engine/middle-school/multivariate/evaluate";
+import { hueOf } from "@/utils/color";
 
-const GRID = 40;
-const DOMAIN = 4;
+export interface MultivariateDomain {
+  xMin: number;
+  xMax: number;
+  yMin: number;
+  yMax: number;
+}
+
+// 默认采样精度：标准 50×50，精细 100×100（需求建议）
+export const DEFAULT_MULTIVARIATE_GRID = 50;
+export const DEFAULT_MULTIVARIATE_DOMAIN: MultivariateDomain = {
+  xMin: -4,
+  xMax: 4,
+  yMin: -4,
+  yMax: 4,
+};
 
 interface ViewState {
   az: number;
   el: number;
+  panX: number;
+  panY: number;
 }
 
 interface Projected {
@@ -27,6 +43,8 @@ function project(
   scale: number,
   cx: number,
   cy: number,
+  panX: number,
+  panY: number,
 ): Projected {
   const ca = Math.cos(az);
   const sa = Math.sin(az);
@@ -36,43 +54,39 @@ function project(
   const yr = x * sa + y * ca;
   const ye = yr * ce - z * se;
   const ze = yr * se + z * ce;
-  return { sx: cx + xr * scale, sy: cy - ye * scale, depth: ze };
+  return { sx: cx + panX + xr * scale, sy: cy + panY - ye * scale, depth: ze };
 }
 
-function gridXY(i: number, j: number): [number, number] {
-  return [-DOMAIN + (2 * DOMAIN * i) / GRID, -DOMAIN + (2 * DOMAIN * j) / GRID];
-}
-
-function hueOf(hex: string): number {
-  const clean = hex.replace("#", "");
-  const r = parseInt(clean.slice(0, 2), 16);
-  const g = parseInt(clean.slice(2, 4), 16);
-  const b = parseInt(clean.slice(4, 6), 16);
-  if ([r, g, b].some((v) => Number.isNaN(v))) return 210;
-  const max = Math.max(r, g, b);
-  const min = Math.min(r, g, b);
-  if (max === min) return 210;
-  let h = 0;
-  if (max === r) h = (g - b) / (max - min);
-  else if (max === g) h = (b - r) / (max - min) + 2;
-  else h = (r - g) / (max - min) + 4;
-  h *= 60;
-  return h < 0 ? h + 360 : h;
+function gridXY(i: number, j: number, domain: MultivariateDomain, grid: number): [number, number] {
+  return [
+    domain.xMin + ((domain.xMax - domain.xMin) * i) / grid,
+    domain.yMin + ((domain.yMax - domain.yMin) * j) / grid,
+  ];
 }
 
 export function SurfaceView({
   functions,
+  domain = DEFAULT_MULTIVARIATE_DOMAIN,
+  grid = DEFAULT_MULTIVARIATE_GRID,
   className,
 }: {
   functions: MultivariateFunction[];
+  domain?: MultivariateDomain;
+  grid?: number;
   className?: string;
 }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const viewRef = useRef<ViewState>({ az: -Math.PI / 4, el: 0.55 });
+  const viewRef = useRef<ViewState>({ az: -Math.PI / 4, el: 0.55, panX: 0, panY: 0 });
   const dragRef = useRef<{ x: number; y: number } | null>(null);
+  const modeRef = useRef<"rotate" | "pan">("rotate");
   const functionsRef = useRef(functions);
   functionsRef.current = functions;
   const [zoom, setZoom] = useState(1);
+
+  const resetView = () => {
+    viewRef.current = { az: -Math.PI / 4, el: 0.55, panX: 0, panY: 0 };
+    setZoom(1);
+  };
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -102,10 +116,19 @@ export function SurfaceView({
         return;
       }
 
-      const { az, el } = viewRef.current;
-      const scale = (Math.min(w, h) * 0.3 * zoom) / DOMAIN;
+      // 根据取值范围自适应缩放与平移中心
+      const spanX = Math.max(1e-6, domain.xMax - domain.xMin);
+      const spanY = Math.max(1e-6, domain.yMax - domain.yMin);
+      const span = Math.max(spanX, spanY);
+      const cxWorld = (domain.xMin + domain.xMax) / 2;
+      const cyWorld = (domain.yMin + domain.yMax) / 2;
+
+      const { az, el, panX, panY } = viewRef.current;
+      const scale = (Math.min(w, h) * 0.32 * zoom) / span;
       const cx = w / 2;
       const cy = h / 2;
+      const proj = (x: number, y: number, z: number) =>
+        project(x - cxWorld, y - cyWorld, z, az, el, scale, cx, cy, panX, panY);
 
       interface Layer {
         zs: number[][];
@@ -118,11 +141,11 @@ export function SurfaceView({
         const zs: number[][] = [];
         let zMin = Infinity;
         let zMax = -Infinity;
-        for (let i = 0; i <= GRID; i++) {
+        for (let i = 0; i <= grid; i++) {
           const row: number[] = [];
-          const [x] = gridXY(i, 0);
-          for (let j = 0; j <= GRID; j++) {
-            const [, y] = gridXY(0, j);
+          const [x] = gridXY(i, 0, domain, grid);
+          for (let j = 0; j <= grid; j++) {
+            const [, y] = gridXY(0, j, domain, grid);
             const z = fn.evaluate(x, y);
             row.push(z);
             if (Number.isFinite(z)) {
@@ -137,11 +160,11 @@ export function SurfaceView({
         return { zs, zMin, zMax, hue: hueOf(f.color) };
       });
 
-      // axes
-      const axisLen = DOMAIN * 1.08;
+      // 坐标轴（穿过世界原点）
+      const axisLen = span * 0.55;
       const drawAxis = (end: [number, number, number], color: string, label: string) => {
-        const p0 = project(0, 0, 0, az, el, scale, cx, cy);
-        const p1 = project(end[0], end[1], end[2], az, el, scale, cx, cy);
+        const p0 = proj(0, 0, 0);
+        const p1 = proj(end[0], end[1], end[2]);
         ctx.strokeStyle = color;
         ctx.lineWidth = 1.5;
         ctx.beginPath();
@@ -158,22 +181,22 @@ export function SurfaceView({
       drawAxis([0, axisLen, 0], "#059669", "y");
       drawAxis([0, 0, axisLen], "#2563eb", "z");
 
-      // quads (painter's algorithm)
+      // 四边形网格（画家算法）
       for (const layer of layers) {
         const cells: { i: number; j: number; depth: number; zAvg: number }[] = [];
-        for (let i = 0; i < GRID; i++) {
-          for (let j = 0; j < GRID; j++) {
+        for (let i = 0; i < grid; i++) {
+          for (let j = 0; j < grid; j++) {
             const z00 = layer.zs[i][j];
             const z10 = layer.zs[i + 1][j];
             const z01 = layer.zs[i][j + 1];
             const z11 = layer.zs[i + 1][j + 1];
             if ([z00, z10, z01, z11].some((z) => !Number.isFinite(z))) continue;
-            const [x0, y0] = gridXY(i, j);
-            const [x1, y1] = gridXY(i + 1, j + 1);
-            const c00 = project(x0, y0, z00, az, el, scale, cx, cy);
-            const c10 = project(x1, y0, z10, az, el, scale, cx, cy);
-            const c11 = project(x1, y1, z11, az, el, scale, cx, cy);
-            const c01 = project(x0, y1, z01, az, el, scale, cx, cy);
+            const [x0, y0] = gridXY(i, j, domain, grid);
+            const [x1, y1] = gridXY(i + 1, j + 1, domain, grid);
+            const c00 = proj(x0, y0, z00);
+            const c10 = proj(x1, y0, z10);
+            const c11 = proj(x1, y1, z11);
+            const c01 = proj(x0, y1, z01);
             cells.push({
               i,
               j,
@@ -185,8 +208,8 @@ export function SurfaceView({
         cells.sort((a, b) => a.depth - b.depth);
         const range = layer.zMax - layer.zMin || 1;
         for (const cell of cells) {
-          const [x0, y0] = gridXY(cell.i, cell.j);
-          const [x1, y1] = gridXY(cell.i + 1, cell.j + 1);
+          const [x0, y0] = gridXY(cell.i, cell.j, domain, grid);
+          const [x1, y1] = gridXY(cell.i + 1, cell.j + 1, domain, grid);
           const z00 = layer.zs[cell.i][cell.j];
           const z10 = layer.zs[cell.i + 1][cell.j];
           const z11 = layer.zs[cell.i + 1][cell.j + 1];
@@ -197,10 +220,10 @@ export function SurfaceView({
           ctx.strokeStyle = `hsl(${layer.hue}, 55%, ${Math.max(0, lightness - 8)}%)`;
           ctx.lineWidth = 0.6;
           ctx.beginPath();
-          ctx.moveTo(project(x0, y0, z00, az, el, scale, cx, cy).sx, project(x0, y0, z00, az, el, scale, cx, cy).sy);
-          ctx.lineTo(project(x1, y0, z10, az, el, scale, cx, cy).sx, project(x1, y0, z10, az, el, scale, cx, cy).sy);
-          ctx.lineTo(project(x1, y1, z11, az, el, scale, cx, cy).sx, project(x1, y1, z11, az, el, scale, cx, cy).sy);
-          ctx.lineTo(project(x0, y1, z01, az, el, scale, cx, cy).sx, project(x0, y1, z01, az, el, scale, cx, cy).sy);
+          ctx.moveTo(proj(x0, y0, z00).sx, proj(x0, y0, z00).sy);
+          ctx.lineTo(proj(x1, y0, z10).sx, proj(x1, y0, z10).sy);
+          ctx.lineTo(proj(x1, y1, z11).sx, proj(x1, y1, z11).sy);
+          ctx.lineTo(proj(x0, y1, z01).sx, proj(x0, y1, z01).sy);
           ctx.closePath();
           ctx.fill();
           ctx.stroke();
@@ -211,7 +234,7 @@ export function SurfaceView({
       ctx.font = "11px sans-serif";
       ctx.textAlign = "left";
       ctx.textBaseline = "top";
-      ctx.fillText("拖动旋转 · 滚轮缩放", 8, 8);
+      ctx.fillText("左键拖动旋转 · 右键/Shift+拖动平移 · 滚轮缩放", 8, 8);
     };
 
     render();
@@ -225,6 +248,7 @@ export function SurfaceView({
     };
 
     const onDown = (e: PointerEvent) => {
+      modeRef.current = e.button === 2 || e.button === 1 || e.shiftKey ? "pan" : "rotate";
       dragRef.current = { x: e.clientX, y: e.clientY };
       try {
         canvas.setPointerCapture(e.pointerId);
@@ -239,8 +263,13 @@ export function SurfaceView({
       const dy = e.clientY - drag.y;
       drag.x = e.clientX;
       drag.y = e.clientY;
-      viewRef.current.az += dx * 0.01;
-      viewRef.current.el = Math.min(Math.PI - 0.05, Math.max(0.05, viewRef.current.el + dy * 0.01));
+      if (modeRef.current === "pan") {
+        viewRef.current.panX += dx;
+        viewRef.current.panY += dy;
+      } else {
+        viewRef.current.az += dx * 0.01;
+        viewRef.current.el = Math.min(Math.PI - 0.05, Math.max(0.05, viewRef.current.el + dy * 0.01));
+      }
       render();
     };
     const onUp = (e: PointerEvent) => {
@@ -251,12 +280,14 @@ export function SurfaceView({
         /* ignore */
       }
     };
+    const onContextMenu = (e: MouseEvent) => e.preventDefault();
 
     canvas.addEventListener("pointerdown", onDown);
     canvas.addEventListener("pointermove", onMove);
     canvas.addEventListener("pointerup", onUp);
     canvas.addEventListener("pointercancel", onUp);
     canvas.addEventListener("wheel", onWheel, { passive: false });
+    canvas.addEventListener("contextmenu", onContextMenu);
     return () => {
       ro.disconnect();
       canvas.removeEventListener("pointerdown", onDown);
@@ -264,8 +295,9 @@ export function SurfaceView({
       canvas.removeEventListener("pointerup", onUp);
       canvas.removeEventListener("pointercancel", onUp);
       canvas.removeEventListener("wheel", onWheel);
+      canvas.removeEventListener("contextmenu", onContextMenu);
     };
-  }, [zoom]);
+  }, [zoom, domain, grid]);
 
   return (
     <div className="relative h-full w-full">
@@ -291,6 +323,14 @@ export function SurfaceView({
           className="flex h-7 w-7 items-center justify-center rounded-full text-base text-slate-600 hover:bg-slate-100"
         >
           ＋
+        </button>
+        <button
+          type="button"
+          title="重置视角"
+          onClick={resetView}
+          className="flex h-7 items-center justify-center rounded-full px-2 text-xs text-slate-600 hover:bg-slate-100"
+        >
+          重置
         </button>
       </div>
     </div>

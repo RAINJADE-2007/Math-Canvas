@@ -6,6 +6,36 @@ import { extractRhs } from "@/math-engine/core/parser/parseExpression";
 
 const SAFE_CHARACTER_RE = /^[0-9a-zA-Z+\-*/^().,\s]+$/;
 
+// 统一的用户提示文案（需求指定）
+const PARSE_HINT = "无法解析该函数，请检查表达式";
+
+// 常见输入写法到 mathjs 表达式的归一化映射，
+// 让 z=x²+y²、π、√、· 等自然写法也能被解析。
+const SUPERSCRIPT_MAP: Record<string, string> = {
+  "⁰": "^0",
+  "¹": "^1",
+  "²": "^2",
+  "³": "^3",
+  "⁴": "^4",
+  "⁵": "^5",
+  "⁶": "^6",
+  "⁷": "^7",
+  "⁸": "^8",
+  "⁹": "^9",
+};
+
+function normalizeExpressionInput(input: string): string {
+  let out = input
+    .replace(/π/g, "pi")
+    .replace(/√/g, "sqrt")
+    .replace(/[−–—]/g, "-")
+    .replace(/[·⋅×]/g, "*");
+  for (const [from, to] of Object.entries(SUPERSCRIPT_MAP)) {
+    out = out.split(from).join(to);
+  }
+  return out;
+}
+
 export interface BivariateParseResult {
   ok: boolean;
   normalizedExpression: string;
@@ -48,30 +78,33 @@ export function parseMultivariateInput(rawInput: string): BivariateParseResult {
     ok: false,
     normalizedExpression: "",
     latex: "",
-    error: "请输入多元函数表达式",
+    error: `${PARSE_HINT}（输入为空）`,
   };
   if (!rawInput || rawInput.trim().length === 0) return empty;
   const rhs = extractRhs(rawInput);
-  if (!rhs) return { ...empty, error: "未找到等号右侧的表达式" };
-  if (!SAFE_CHARACTER_RE.test(rhs)) return { ...empty, error: "表达式包含非法字符" };
+  if (!rhs) return { ...empty, error: `${PARSE_HINT}（未找到等号右侧的表达式）` };
+
+  const normalized = normalizeExpressionInput(rhs);
+  if (!SAFE_CHARACTER_RE.test(normalized)) return { ...empty, error: `${PARSE_HINT}（包含非法字符）` };
 
   let node: MathNode;
   try {
-    node = parse(rhs);
+    node = parse(normalized);
   } catch (err) {
-    return { ...empty, error: `表达式解析失败：${err instanceof Error ? err.message : String(err)}` };
+    const detail = err instanceof Error ? err.message : String(err);
+    return { ...empty, error: `${PARSE_HINT}（${detail}）` };
   }
 
   const errors: string[] = [];
   validateBivariateNode(node, errors);
-  if (errors.length > 0) return { ...empty, error: errors[0] };
+  if (errors.length > 0) return { ...empty, error: `${PARSE_HINT}（${errors[0]}）` };
 
   let latex: string;
   try {
     latex = node.toTex();
   } catch {
-    latex = rhs;
+    latex = normalized;
   }
 
-  return { ok: true, normalizedExpression: rhs, latex };
+  return { ok: true, normalizedExpression: normalized, latex };
 }
