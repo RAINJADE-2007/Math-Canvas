@@ -67,50 +67,52 @@ export function CanvasWorkspace() {
           ) : (
             <MathCanvasBoard />
           )}
-          <div className="absolute right-2 top-2 z-20 flex items-center gap-0.5 rounded-full border border-slate-200 bg-white/95 p-0.5 shadow-sm">
-            <button
-              type="button"
-              onClick={() => setViewMode("2d")}
-              title="二维函数图像"
-              className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
-                viewMode === "2d" ? "bg-primary-600 text-white" : "text-slate-500 hover:text-primary-600"
-              }`}
-            >
-              2D
-            </button>
-            <button
-              type="button"
-              onClick={() => setViewMode("3d")}
-              title="三维曲面 / 等高线（多元函数）"
-              className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
-                viewMode === "3d" ? "bg-primary-600 text-white" : "text-slate-500 hover:text-primary-600"
-              }`}
-            >
-              3D
-            </button>
-          </div>
-          {viewMode === "3d" ? (
-            <div className="absolute left-2 top-2 z-20 flex items-center gap-0.5 rounded-full border border-slate-200 bg-white/95 p-0.5 shadow-sm">
+          <div className="absolute left-2 top-2 z-20 flex flex-col items-start gap-1.5">
+            <div className="flex items-center gap-0.5 rounded-full border border-slate-200 bg-white/95 p-0.5 shadow-sm">
               <button
                 type="button"
-                onClick={() => setView3d("surface")}
+                onClick={() => setViewMode("2d")}
+                title="二维函数图像"
                 className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
-                  view3d === "surface" ? "bg-primary-600 text-white" : "text-slate-500 hover:text-primary-600"
+                  viewMode === "2d" ? "bg-primary-600 text-white" : "text-slate-500 hover:text-primary-600"
                 }`}
               >
-                3D曲面
+                2D
               </button>
               <button
                 type="button"
-                onClick={() => setView3d("contour")}
+                onClick={() => setViewMode("3d")}
+                title="三维曲面 / 等高线（多元函数）"
                 className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
-                  view3d === "contour" ? "bg-primary-600 text-white" : "text-slate-500 hover:text-primary-600"
+                  viewMode === "3d" ? "bg-primary-600 text-white" : "text-slate-500 hover:text-primary-600"
                 }`}
               >
-                等高线
+                3D
               </button>
             </div>
-          ) : null}
+            {viewMode === "3d" ? (
+              <div className="flex items-center gap-0.5 rounded-full border border-slate-200 bg-white/95 p-0.5 shadow-sm">
+                <button
+                  type="button"
+                  onClick={() => setView3d("surface")}
+                  className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
+                    view3d === "surface" ? "bg-primary-600 text-white" : "text-slate-500 hover:text-primary-600"
+                  }`}
+                >
+                  3D曲面
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setView3d("contour")}
+                  className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
+                    view3d === "contour" ? "bg-primary-600 text-white" : "text-slate-500 hover:text-primary-600"
+                  }`}
+                >
+                  等高线
+                </button>
+              </div>
+            ) : null}
+          </div>
         </div>
         <RightPanel />
       </div>
