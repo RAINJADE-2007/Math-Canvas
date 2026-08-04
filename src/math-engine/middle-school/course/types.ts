@@ -1,16 +1,9 @@
-export type MiddleChapterId =
-  | "numbers"
-  | "equations"
-  | "inequalities"
-  | "functions"
-  | "plane-geometry"
-  | "triangle-circle"
-  | "statistics"
-  | "applications";
+export type MiddleStage = "junior" | "senior";
 
 export interface MiddleKnowledgePoint {
   id: string;
-  chapterId: MiddleChapterId;
+  stage?: MiddleStage;
+  chapterId: string;
   title: string;
   objectives: string[];
   motivation: string;
@@ -28,10 +21,12 @@ export interface MiddleKnowledgePoint {
   commonMistakes: Array<{ mistake: string; correction: string }>;
   summary: string[];
   selfCheck: string[];
+  prerequisiteJunior?: string[];
 }
 
 export interface MiddleChapter {
-  id: MiddleChapterId;
+  id: string;
+  stage?: MiddleStage;
   number: number;
   title: string;
   description: string;
@@ -42,9 +37,19 @@ export interface MiddleChapter {
   knowledgePoints: MiddleKnowledgePoint[];
 }
 
+export interface MiddleStageDef {
+  id: MiddleStage;
+  name: string;
+  description: string;
+  suggestedGrades: string;
+  learningGoals: string[];
+  chapters: MiddleChapter[];
+}
+
 export interface MiddleExercise {
   id: string;
-  chapterId: MiddleChapterId;
+  stage?: MiddleStage;
+  chapterId: string;
   difficulty: "basic" | "comprehension" | "application";
   targetConcepts: string[];
   question: string;
@@ -58,9 +63,15 @@ export interface MiddleExercise {
 }
 
 export interface MiddleLearningProgress {
+  junior: StageProgress;
+  senior: StageProgress;
+  activeStage: MiddleStage;
+}
+
+export interface StageProgress {
   completedPoints: string[];
   completedExercises: string[];
-  chapterProgress: Record<MiddleChapterId, number>;
-  lastChapter: MiddleChapterId;
+  chapterProgress: Record<string, number>;
+  lastChapter: string;
   lastPointIndex: number;
 }
