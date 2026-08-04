@@ -5,11 +5,8 @@ import Link from "next/link";
 import type { SeniorChapter, SeniorProgress } from "@/math-engine/middle-school/senior";
 import { SENIOR_CHAPTERS } from "@/math-engine/middle-school/senior";
 import { LatexView } from "@/components/common/LatexView";
-import { VectorCanvas } from "@/components/linear-algebra/VectorCanvas";
-import { MatrixCanvas } from "@/components/linear-algebra/MatrixCanvas";
-import { EigenVis } from "@/components/linear-algebra/EigenVis";
-import { DeterminantVis } from "@/components/linear-algebra/DeterminantVis";
-import { LeastSquaresVis } from "@/components/linear-algebra/LeastSquaresVis";
+import { renderVisual } from "@/components/middle-school/visuals/VisualSystem";
+import type { VisualType } from "@/components/middle-school/visuals/VisualSystem";
 
 const LS_KEY = "math-canvas-senior-math-progress";
 
@@ -30,18 +27,22 @@ function init(): SeniorProgress {
   };
 }
 
-function renderVisual(cid: string) {
-  switch(cid){
-    case "sn-vectors": case "sn-trig": return <VectorCanvas height={380} showSum showDot />;
-    case "sn-quadratic": return <MatrixCanvas height={380} />;
-    case "sn-analytic-geo": return <DeterminantVis height={380} />;
-    case "sn-derivatives": return getDerivativeHint();
-    case "sn-stat-prob": return <LeastSquaresVis height={420} />;
-    default: return <VectorCanvas height={380} showSum showDot />;
-  }
-}
-function getDerivativeHint() {
-  return <div className="rounded-lg border border-slate-200 bg-white p-4"><h4 className="mb-2 text-sm font-medium text-slate-700">导数切线演示</h4><p className="text-xs text-slate-500">请前往数学画布工具，输入函数表达式体验切线、单调区间和极值分析。</p><Link href="/subjects/math-canvas" className="mt-2 inline-block rounded bg-primary-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-primary-700">前往数学画布 →</Link></div>;
+function renderVis(cid: string) {
+  const map: Record<string, VisualType> = {
+    "sn-sets": "logic-diagram",
+    "sn-quadratic": "function-graph",
+    "sn-func-props": "function-graph",
+    "sn-exp-log": "function-graph",
+    "sn-trig": "unit-circle",
+    "sn-vectors": "vector-plane",
+    "sn-sequences": "function-graph",
+    "sn-geometry-3d": "geometry-board",
+    "sn-analytic-geo": "conic-section",
+    "sn-stat-prob": "statistics-chart",
+    "sn-counting": "counting-tree",
+    "sn-derivatives": "derivative-lab",
+  };
+  return renderVisual(map[cid] ?? "function-graph");
 }
 
 export default function SeniorMathPage() {
@@ -133,7 +134,7 @@ export default function SeniorMathPage() {
             </>:<div className="flex h-64 items-center justify-center text-sm text-slate-400">请从左侧选择章节</div>}
           </div>
           <div className="border-t border-slate-200 lg:w-[420px] lg:shrink-0 lg:border-l lg:border-t-0">
-            {showVis&&<div className="border-b border-slate-200 p-4"><h4 className="mb-3 text-sm font-medium text-slate-700">交互可视化</h4>{renderVisual(chId)}</div>}
+            {showVis&&<div className="border-b border-slate-200 p-4"><h4 className="mb-3 text-sm font-medium text-slate-700">交互可视化</h4>{renderVis(chId)}</div>}
             <div className="p-4"><div className="rounded-lg border border-dashed border-slate-300 p-6 text-center text-xs text-slate-400">练习题功能可通过数学画布进行实际操作练习。<br/><Link href="/subjects/math-canvas" className="mt-2 inline-block text-primary-600 hover:underline">前往数学画布 →</Link></div></div>
           </div>
         </div>

@@ -5,9 +5,8 @@ import Link from "next/link";
 import type { MiddleStage, MiddleChapter } from "@/math-engine/middle-school/course/types";
 import { JUNIOR_STAGE } from "@/math-engine/middle-school/course/junior-course-data";
 import { LatexView } from "@/components/common/LatexView";
-import { VectorCanvas } from "@/components/linear-algebra/VectorCanvas";
-import { GaussCanvas } from "@/components/linear-algebra/GaussCanvas";
-import { LeastSquaresVis } from "@/components/linear-algebra/LeastSquaresVis";
+import { renderVisual } from "@/components/middle-school/visuals/VisualSystem";
+import type { VisualType } from "@/components/middle-school/visuals/VisualSystem";
 
 const LS_KEY = "math-canvas-middle-school-progress-v2";
 
@@ -93,17 +92,20 @@ export default function MiddleSchoolPage() {
     setProgress({ ...progress, [stage]: sp2 });
   }, [point, chapter, currentChId, pointIdx, stage, progress]);
 
-  const renderVisual = () => {
-    switch (stage + "-" + currentChId) {
-      case "junior-jr-numbers": return getNumberLine();
-      case "junior-jr-equations": return getEquationBalance();
-      case "junior-jr-inequalities": return getNumberLine();
-      case "junior-jr-functions": return getFunctionGraph();
-      case "junior-jr-geometry": case "junior-jr-triangle-circle": return <VectorCanvas height={380} showSum showDot />;
-      case "junior-jr-statistics": return <LeastSquaresVis height={420} />;
-      case "junior-jr-applications": return <GaussCanvas />;
-      default: return <VectorCanvas height={380} showSum showDot />;
-    }
+  const visMap: Record<string, VisualType> = {
+    "jr-numbers": "number-line",
+    "jr-equations": "equation-balance",
+    "jr-inequalities": "inequality-line",
+    "jr-functions": "function-graph",
+    "jr-geometry": "geometry-board",
+    "jr-triangle-circle": "geometry-board",
+    "jr-statistics": "statistics-chart",
+    "jr-applications": "function-graph",
+  };
+
+  const renderVis = () => {
+    const t = visMap[currentChId] ?? "function-graph";
+    return renderVisual(t);
   };
 
   const Section = ({ title, children, color = "slate" }: { title: string; children: React.ReactNode; color?: string }) => {
@@ -232,7 +234,7 @@ export default function MiddleSchoolPage() {
             )}
           </div>
           <div className="border-t border-slate-200 lg:w-[420px] lg:shrink-0 lg:border-l lg:border-t-0">
-            {showVisual && <div className="border-b border-slate-200 p-4"><h4 className="mb-3 text-sm font-medium text-slate-700">交互可视化</h4>{renderVisual()}</div>}
+            {showVisual && <div className="border-b border-slate-200 p-4"><h4 className="mb-3 text-sm font-medium text-slate-700">交互可视化</h4>{renderVis()}</div>}
             <div className="p-4"><div className="rounded-lg border border-dashed border-slate-300 p-6 text-center text-xs text-slate-400">练习题功能可通过数学画布进行实际操作练习。<br /><Link href="/subjects/math-canvas" className="mt-2 inline-block text-primary-600 hover:underline">前往数学画布 →</Link></div></div>
           </div>
         </div>
@@ -241,34 +243,3 @@ export default function MiddleSchoolPage() {
   );
 }
 
-function getNumberLine() {
-  return (
-    <div className="rounded-lg border border-slate-200 bg-white p-4">
-      <h4 className="mb-2 text-sm font-medium text-slate-700">数轴与绝对值</h4>
-      <div className="flex items-center justify-center"><svg viewBox="0 0 600 120" className="h-28 w-full"><line x1={20} y1={60} x2={580} y2={60} stroke="#94a3b8" strokeWidth={2} />{[0,1,2,3,4,5,-1,-2,-3,-4,-5].map(n => (<g key={n}><line x1={300+n*50} y1={55} x2={300+n*50} y2={65} stroke="#64748b" strokeWidth={1.5} /><text x={300+n*50} y={80} textAnchor="middle" fill="#475569" fontSize={11}>{n}</text></g>))}<circle cx={300} cy={60} r={4} fill="#2563eb" /><text x={300} y={100} textAnchor="middle" fill="#2563eb" fontSize={12}>0(原点)</text></svg></div>
-      <p className="mt-1 text-center text-xs text-slate-500">每个实数对应数轴上的唯一点。向右越大，向左越小。</p>
-    </div>
-  );
-}
-function getEquationBalance() {
-  return (
-    <div className="rounded-lg border border-slate-200 bg-white p-4">
-      <h4 className="mb-2 text-sm font-medium text-slate-700">方程天平</h4>
-      <div className="flex items-center justify-center gap-4">
-        <div className="flex flex-col items-center"><div className="rounded-lg border-2 border-slate-300 bg-amber-50 p-3 text-center text-sm"><span className="font-bold text-blue-700">3x + 2</span></div><div className="my-1 h-8 w-1 bg-slate-400" /><div className="h-2 w-16 rounded-full bg-slate-400" /><div className="text-center text-[10px] text-slate-500">左边</div></div>
-        <div className="text-2xl font-bold text-slate-500">=</div>
-        <div className="flex flex-col items-center"><div className="rounded-lg border-2 border-slate-300 bg-emerald-50 p-3 text-center text-sm"><span className="font-bold text-emerald-700">11</span></div><div className="my-1 h-8 w-1 bg-slate-400" /><div className="h-2 w-16 rounded-full bg-slate-400" /><div className="text-center text-[10px] text-slate-500">右边</div></div>
-      </div>
-      <p className="mt-2 text-center text-xs text-slate-500">等式两边同加/减/乘/除（非零），天平保持平衡。</p>
-    </div>
-  );
-}
-function getFunctionGraph() {
-  return (
-    <div className="rounded-lg border border-slate-200 bg-white p-4">
-      <h4 className="mb-2 text-sm font-medium text-slate-700">函数图像</h4>
-      <p className="text-xs text-slate-500">请前往数学画布工具，输入表达式体验完整的函数图像绘制、参数滑块和导数分析。</p>
-      <Link href="/subjects/math-canvas" className="mt-2 inline-block rounded bg-primary-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-primary-700">前往数学画布 →</Link>
-    </div>
-  );
-}
