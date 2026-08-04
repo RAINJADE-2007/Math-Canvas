@@ -278,18 +278,26 @@ export function TrianglePropertiesLab() {
           })}
           {/* Right angle symbol */}
           {props?.isRight && (() => {
-            const sides = pts.map((p, i) => ({ len: dist2D(p, pts[(i + 1) % 3]), opp: pts[(i + 2) % 3] }));
-            const rightIdx = sides.findIndex(s => Math.abs(s.len ** 2 - (dist2D(s.opp, pts[(sides.indexOf(s) + 1) % 3]) ** 2 + dist2D(s.opp, pts[sides.indexOf(s)]) ** 2)) < 0.1);
-            if (rightIdx >= 0) {
-              const A = pts[rightIdx], B = pts[(rightIdx + 1) % 3], C = pts[(rightIdx + 2) % 3];
-              const ux = (B.x - A.x) / dist2D(A, B), uy = (B.y - A.y) / dist2D(A, B);
-              const vx = (C.x - A.x) / dist2D(A, C), vy = (C.y - A.y) / dist2D(A, C);
-              const size = 0.4;
+            const rightIdx = [0, 1, 2].find(i => {
+              const a = dist2D(pts[(i + 1) % 3], pts[(i + 2) % 3]);
+              const b = dist2D(pts[i], pts[(i + 2) % 3]);
+              const c = dist2D(pts[i], pts[(i + 1) % 3]);
+              return Math.abs(a * a - (b * b + c * c)) < 0.15;
+            });
+            if (rightIdx !== undefined && rightIdx >= 0) {
+              const A = pts[rightIdx];
+              const B = pts[(rightIdx + 1) % 3];
+              const C = pts[(rightIdx + 2) % 3];
+              const dAB = dist2D(A, B), dAC = dist2D(A, C);
+              if (dAB < 0.1 || dAC < 0.1) return null;
+              const ux = (B.x - A.x) / dAB, uy = (B.y - A.y) / dAB;
+              const vx = (C.x - A.x) / dAC, vy = (C.y - A.y) / dAC;
+              const sz = 0.4;
               const sx = vb.ox + A.x * vb.scale, sy = vb.oy - A.y * vb.scale;
-              const p1x = sx + ux * size * vb.scale, p1y = sy - uy * size * vb.scale;
-              const p2x = sx + (ux + vx) * size * vb.scale, p2y = sy - (uy + vy) * size * vb.scale;
-              const p3x = sx + vx * size * vb.scale, p3y = sy - vy * size * vb.scale;
-              return <path d={`M ${p1x} ${p1y} L ${p2x} ${p2y} L ${p3x} ${p3y}`} fill="none" stroke="#dc2626" strokeWidth={1.5} />;
+              const p1x = sx + ux * sz * vb.scale, p1y = sy - uy * sz * vb.scale;
+              const p2x = sx + (ux + vx) * sz * vb.scale, p2y = sy - (uy + vy) * sz * vb.scale;
+              const p3x = sx + vx * sz * vb.scale, p3y = sy - vy * sz * vb.scale;
+              return <path key="rightAngle" d={`M ${p1x} ${p1y} L ${p2x} ${p2y} L ${p3x} ${p3y}`} fill="none" stroke="#dc2626" strokeWidth={2} />;
             }
             return null;
           })()}
@@ -457,52 +465,60 @@ export function SolidGeometryLab() {
   };
 
   const drawCylinder = () => {
-    const n = 24; const el: React.ReactNode[] = [];
+    const n = 32; const el: React.ReactNode[] = [];
     const top: { sx: number; sy: number; depth: number }[] = [], bot: { sx: number; sy: number; depth: number }[] = [];
     for (let i = 0; i <= n; i++) {
       const a = i * 2 * Math.PI / n;
       bot.push(toScreen(r * Math.cos(a), -h / 2, r * Math.sin(a)));
       top.push(toScreen(r * Math.cos(a), h / 2, r * Math.sin(a)));
     }
-    // Bottom ellipse
-    const botPts = bot.map(v => `${v.sx},${v.sy}`).join(" ");
-    el.push(<ellipse key="bot" cx={vb.cx} cy={vb.cy + h / 2 * 22 * zoom * Math.sin(rotX * Math.PI / 180)} rx={r * 22 * zoom}
-      ry={r * 22 * zoom * Math.abs(Math.cos(rotX * Math.PI / 180)) * 0.5 + 4} fill="rgba(37,99,235,0.08)" stroke="#2563eb" strokeWidth={1} />);
-    // Top ellipse  
-    el.push(<ellipse key="top" cx={vb.cx} cy={vb.cy - h / 2 * 22 * zoom * Math.sin(rotX * Math.PI / 180)} rx={r * 22 * zoom}
-      ry={r * 22 * zoom * Math.abs(Math.cos(rotX * Math.PI / 180)) * 0.5 + 4} fill="rgba(37,99,235,0.15)" stroke="#2563eb" strokeWidth={1.5} />);
-    // Side lines
-    for (let i = 0; i < n; i += 2) {
-      el.push(<line key={`s${i}`} x1={bot[i].sx} y1={bot[i].sy} x2={top[i].sx} y2={top[i].sy} stroke="#93c5fd" strokeWidth={0.4} />);
+    // Side surface: filled polygon connecting top and bottom rims
+    const sidePts = bot.map((b, i) => `${b.sx},${b.sy}`).join(" ") + " " + [...top].reverse().map(t => `${t.sx},${t.sy}`).join(" ");
+    el.push(<polygon key="side" points={sidePts} fill="rgba(37,99,235,0.12)" stroke="none" />);
+    // Side edge lines for 3D feel
+    for (let i = 0; i < n; i += 3) {
+      el.push(<line key={`edge${i}`} x1={bot[i].sx} y1={bot[i].sy} x2={top[i].sx} y2={top[i].sy} stroke="#93c5fd" strokeWidth={0.5} />);
     }
-    // Radius label
-    el.push(<line key="rad" x1={vb.cx} y1={vb.cy - h / 2 * 22 * zoom * Math.sin(rotX * Math.PI / 180)}
-      x2={vb.cx + r * 22 * zoom} y2={vb.cy - h / 2 * 22 * zoom * Math.sin(rotX * Math.PI / 180)} stroke="#dc2626" strokeWidth={1} strokeDasharray="3,2" />);
+    // Bottom ellipse (drawn after side so it shows on top of back side)
+    const botCy = vb.cy + h / 2 * 22 * zoom * Math.sin(rotX * Math.PI / 180);
+    el.push(<ellipse key="bot" cx={vb.cx} cy={botCy} rx={r * 22 * zoom}
+      ry={r * 22 * zoom * Math.abs(Math.cos(rotX * Math.PI / 180)) * 0.5 + 4}
+      fill="rgba(37,99,235,0.08)" stroke="#2563eb" strokeWidth={1} />);
+    // Top ellipse
+    const topCy = vb.cy - h / 2 * 22 * zoom * Math.sin(rotX * Math.PI / 180);
+    el.push(<ellipse key="top" cx={vb.cx} cy={topCy} rx={r * 22 * zoom}
+      ry={r * 22 * zoom * Math.abs(Math.cos(rotX * Math.PI / 180)) * 0.5 + 4}
+      fill="rgba(37,99,235,0.15)" stroke="#2563eb" strokeWidth={1.5} />);
     return <g>{el}</g>;
   };
 
   const drawCone = () => {
-    const n = 24; const el: React.ReactNode[] = [];
+    const n = 32; const el: React.ReactNode[] = [];
     const bot: { sx: number; sy: number; depth: number }[] = [];
     for (let i = 0; i <= n; i++) {
       const a = i * 2 * Math.PI / n;
       bot.push(toScreen(r * Math.cos(a), -h / 2, r * Math.sin(a)));
     }
     const tip = toScreen(0, h / 2, 0);
+    // Side surface: filled polygon from tip around base
+    const sidePts = bot.map(b => `${b.sx},${b.sy}`).join(" ");
+    el.push(<polygon key="side" points={sidePts} fill="rgba(37,99,235,0.12)" stroke="none" />);
+    // Side edges
+    for (let i = 0; i < n; i += 4) {
+      el.push(<line key={`edge${i}`} x1={tip.sx} y1={tip.sy} x2={bot[i].sx} y2={bot[i].sy} stroke="#93c5fd" strokeWidth={0.5} />);
+    }
+    // Tip point
+    el.push(<circle key="tip" cx={tip.sx} cy={tip.sy} r={4} fill="#2563eb" />);
     // Bottom ellipse
     const botCy = vb.cy + h / 2 * 22 * zoom * Math.sin(rotX * Math.PI / 180);
     el.push(<ellipse key="bot" cx={vb.cx} cy={botCy} rx={r * 22 * zoom}
-      ry={r * 22 * zoom * Math.abs(Math.cos(rotX * Math.PI / 180)) * 0.5 + 4} fill="rgba(37,99,235,0.06)" stroke="#2563eb" strokeWidth={1} />);
-    // Side lines from tip to base
-    for (let i = 0; i < n; i += 3) {
-      el.push(<line key={`s${i}`} x1={tip.sx} y1={tip.sy} x2={bot[i].sx} y2={bot[i].sy} stroke="#93c5fd" strokeWidth={0.4} />);
-    }
-    // Outline
-    const leftBot = toScreen(-r, -h / 2, 0), rightBot = toScreen(r, -h / 2, 0);
+      ry={r * 22 * zoom * Math.abs(Math.cos(rotX * Math.PI / 180)) * 0.5 + 4}
+      fill="rgba(37,99,235,0.08)" stroke="#2563eb" strokeWidth={1} />);
+    // Left/right outlines
+    const leftBot = bot[Math.floor(n / 4)];
+    const rightBot = bot[Math.floor(3 * n / 4)];
     el.push(<line key="ol" x1={tip.sx} y1={tip.sy} x2={leftBot.sx} y2={leftBot.sy} stroke="#2563eb" strokeWidth={1.5} />);
     el.push(<line key="or" x1={tip.sx} y1={tip.sy} x2={rightBot.sx} y2={rightBot.sy} stroke="#2563eb" strokeWidth={1.5} />);
-    // Tip point
-    el.push(<circle key="tip" cx={tip.sx} cy={tip.sy} r={3} fill="#2563eb" />);
     return <g>{el}</g>;
   };
 
@@ -681,33 +697,90 @@ export function RightTriangleTrigLab() {
 export function CircleTheoremLab() {
   const [radius, setRadius] = useState(3); const [angleDeg, setAngleDeg] = useState(60);
   const [lineDist, setLineDist] = useState(2);
+  const svgRef = useRef<SVGSVGElement>(null);
+  const dragRef = useRef<{type: "radius"|"angle"|"line"|null; ptr:number}>({type:null,ptr:-1});
+  const radiusRef = useRef(radius); radiusRef.current = radius;
+  const angleRef = useRef(angleDeg); angleRef.current = angleDeg;
+  const lineRef = useRef(lineDist); lineRef.current = lineDist;
   const cx = 150, cy = 140, S4 = 30;
   const arcAngle = angleDeg * Math.PI / 180;
   const px = cx + radius * S4 * Math.cos(arcAngle), py = cy - radius * S4 * Math.sin(arcAngle);
   const qx = cx + radius * S4, qy = cy;
+
+  useEffect(() => {
+    const svg = svgRef.current; if (!svg) return;
+    const onDown = (e: PointerEvent) => {
+      const rect = svg.getBoundingClientRect();
+      const mx = (e.clientX - rect.left) * 300 / rect.width;
+      const my = (e.clientY - rect.top) * 280 / rect.height;
+      // Check which control point was clicked
+      const dA = Math.hypot(mx - px, my - py);
+      const dCenter = Math.hypot(mx - cx, my - cy);
+      const dLineY = Math.abs(my - (cy - lineRef.current * S4));
+      if (dA < 16) { dragRef.current = { type: "angle", ptr: e.pointerId }; svg.setPointerCapture(e.pointerId); }
+      else if (Math.abs(dCenter - radiusRef.current * S4) < 12) { dragRef.current = { type: "radius", ptr: e.pointerId }; svg.setPointerCapture(e.pointerId); }
+      else if (dLineY < 14 && mx > cx - S4*6 && mx < cx + S4*6) { dragRef.current = { type: "line", ptr: e.pointerId }; svg.setPointerCapture(e.pointerId); }
+    };
+    const onMove = (e: PointerEvent) => {
+      const d = dragRef.current; if (!d.type) return;
+      const rect = svg.getBoundingClientRect();
+      const mx = (e.clientX - rect.left) * 300 / rect.width;
+      const my = (e.clientY - rect.top) * 280 / rect.height;
+      if (d.type === "radius") {
+        const newR = Math.max(1, Math.min(5, Math.round(Math.hypot(mx - cx, my - cy) / S4 * 2) / 2));
+        setRadius(newR);
+      } else if (d.type === "angle") {
+        const newA = Math.round((Math.atan2(cy - my, mx - cx) * 180 / Math.PI + 360) % 360);
+        setAngleDeg(Math.max(10, Math.min(180, newA)));
+      } else if (d.type === "line") {
+        setLineDist(Math.max(0, Math.min(6, Math.round((cy - my) / S4 * 2) / 2)));
+      }
+    };
+    const onUp = (e: PointerEvent) => {
+      if (dragRef.current.type) { svg.releasePointerCapture(dragRef.current.ptr); dragRef.current = {type:null,ptr:-1}; }
+    };
+    svg.addEventListener("pointerdown", onDown);
+    svg.addEventListener("pointermove", onMove);
+    svg.addEventListener("pointerup", onUp);
+    svg.addEventListener("pointercancel", onUp);
+    return () => { svg.removeEventListener("pointerdown", onDown); svg.removeEventListener("pointermove", onMove); svg.removeEventListener("pointerup", onUp); svg.removeEventListener("pointercancel", onUp); };
+  }, []);
+
   return (
     <div className="space-y-2">
       <h4 className="text-sm font-medium text-slate-700">⭕ 圆的性质实验</h4>
       <div className="rounded-lg border border-slate-200 bg-white p-2">
-        <svg viewBox="0 0 300 280" className="h-56 w-full">
-          <circle cx={cx} cy={cy} r={radius * S4} fill="none" stroke="#94a3b8" strokeWidth={2} />
-          <circle cx={cx} cy={cy} r={3} fill="#2563eb" /><text x={cx} y={cy + 14} textAnchor="middle" fill="#2563eb" fontSize={11}>O</text>
-          <circle cx={px} cy={py} r={5} fill="#dc2626" /><text x={px + 8} y={py - 8} fill="#dc2626" fontSize={11}>A</text>
-          <circle cx={qx} cy={qy} r={5} fill="#10b981" /><text x={qx + 8} y={qy - 4} fill="#10b981" fontSize={11}>B</text>
-          <line x1={cx} y1={cy} x2={px} y2={py} stroke="#dc2626" strokeWidth={1} />
-          <line x1={cx} y1={cy} x2={qx} y2={qy} stroke="#10b981" strokeWidth={1} />
-          <text x={cx + 20} y={cy - 16} fill="#dc2626" fontSize={9}>圆心角={angleDeg}°</text>
-          <line x1={cx - radius * S4 * 0.6} y1={cy + radius * S4 * 0.8} x2={px} y2={py} stroke="#7c3aed" strokeWidth={1} strokeDasharray="3,3" />
-          <line x1={cx - radius * S4 * 0.6} y1={cy + radius * S4 * 0.8} x2={qx} y2={qy} stroke="#7c3aed" strokeWidth={1} strokeDasharray="3,3" />
-          <text x={cx - 30} y={cy + radius * S4 * 0.8 + 14} fill="#7c3aed" fontSize={9}>圆周角={angleDeg / 2}°</text>
-          <line x1={cx - S4 * 6} y1={cy - lineDist * S4} x2={cx + S4 * 6} y2={cy - lineDist * S4} stroke={lineDist > radius ? "#dc2626" : lineDist < radius ? "#2563eb" : "#10b981"} strokeWidth={1.5} />
-          <text x={cx - S4 * 6 + 4} y={cy - lineDist * S4 - 4} fill={lineDist > radius ? "#dc2626" : lineDist < radius ? "#2563eb" : "#10b981"} fontSize={9}>{lineDist > radius ? "相离" : lineDist < radius ? "相交" : "相切"}</text>
+        <svg ref={svgRef} viewBox="0 0 300 280" className="h-56 w-full touch-none" style={{cursor:"crosshair"}} aria-label="拖动圆上点调整半径、弧角或直线距离">
+          <circle cx={cx} cy={cy} r={radius * S4} fill="rgba(37,99,235,0.04)" stroke="#94a3b8" strokeWidth={2} />
+          <circle cx={cx} cy={cy} r={4} fill="#2563eb" /><text x={cx} y={cy + 16} textAnchor="middle" fill="#2563eb" fontSize={11} fontWeight="bold">O</text>
+          {/* Draggable radius point */}
+          <circle cx={qx} cy={qy} r={8} fill="#10b981" stroke="white" strokeWidth={2} style={{cursor:"grab"}} />
+          <text x={qx + 10} y={qy - 4} fill="#10b981" fontSize={11} fontWeight="bold">B</text>
+          {/* Draggable angle point A */}
+          <circle cx={px} cy={py} r={8} fill="#dc2626" stroke="white" strokeWidth={2} style={{cursor:"grab"}} />
+          <text x={px + 10} y={py - 8} fill="#dc2626" fontSize={11} fontWeight="bold">A</text>
+          <line x1={cx} y1={cy} x2={px} y2={py} stroke="#dc2626" strokeWidth={1.5} />
+          <line x1={cx} y1={cy} x2={qx} y2={qy} stroke="#10b981" strokeWidth={1.5} />
+          <text x={cx + 22} y={cy - 18} fill="#dc2626" fontSize={9} fontWeight="bold">圆心角={angleDeg}°</text>
+          {/* Inscribed angle */}
+          <line x1={cx - radius * S4 * 0.7} y1={cy + radius * S4 * 0.7} x2={px} y2={py} stroke="#7c3aed" strokeWidth={1} strokeDasharray="3,3" />
+          <line x1={cx - radius * S4 * 0.7} y1={cy + radius * S4 * 0.7} x2={qx} y2={qy} stroke="#7c3aed" strokeWidth={1} strokeDasharray="3,3" />
+          <circle cx={cx - radius * S4 * 0.7} cy={cy + radius * S4 * 0.7} r={4} fill="#7c3aed" />
+          <text x={cx - 40} y={cy + radius * S4 * 0.7 + 18} fill="#7c3aed" fontSize={10} fontWeight="bold">圆周角={angleDeg / 2}°</text>
+          {/* Draggable line distance */}
+          <line x1={cx - S4 * 6} y1={cy - lineDist * S4} x2={cx + S4 * 6} y2={cy - lineDist * S4}
+            stroke={lineDist > radius + 0.05 ? "#dc2626" : lineDist < radius - 0.05 ? "#2563eb" : "#10b981"} strokeWidth={2} />
+          <text x={cx - S4 * 6 + 4} y={cy - lineDist * S4 - 6} fontSize={10} fontWeight="bold"
+            fill={lineDist > radius + 0.05 ? "#dc2626" : lineDist < radius - 0.05 ? "#2563eb" : "#10b981"}>
+            {lineDist > radius + 0.05 ? "相离" : lineDist < radius - 0.05 ? "相交" : "相切"}
+          </text>
         </svg>
       </div>
       <div className="flex flex-wrap items-center gap-2 text-xs">
-        <span>r:<input type="range" min={1.5} max={5} step={0.5} value={radius} onChange={e => setRadius(parseFloat(e.target.value))} className="h-1 w-16" /><span className="font-mono w-6">{radius}</span></span>
+        <span>r:<input type="range" min={1} max={5} step={0.5} value={radius} onChange={e => setRadius(parseFloat(e.target.value))} className="h-1 w-16" /><span className="font-mono w-6">{radius}</span></span>
         <span>弧:<input type="range" min={10} max={180} value={angleDeg} onChange={e => setAngleDeg(parseInt(e.target.value))} className="h-1 w-20" /><span className="font-mono w-12">{angleDeg}°</span></span>
         <span>d:<input type="range" min={0} max={6} step={0.5} value={lineDist} onChange={e => setLineDist(parseFloat(e.target.value))} className="h-1 w-16" /><span className="font-mono w-6">{lineDist}</span></span>
+        <button onClick={() => { setRadius(3); setAngleDeg(60); setLineDist(2); }} className="rounded border border-slate-300 px-2 py-0.5 hover:bg-slate-50 text-[10px]">重置</button>
       </div>
       <div className="grid grid-cols-2 gap-1 text-xs">
         <div className="rounded bg-slate-50 p-1.5">C={<span className="font-mono">{(2 * Math.PI * radius).toFixed(2)}</span>}</div>
