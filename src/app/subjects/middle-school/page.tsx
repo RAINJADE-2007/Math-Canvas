@@ -2,7 +2,7 @@
 
 import { useState, useMemo, useCallback, useEffect } from "react";
 import Link from "next/link";
-import type { MiddleStage, MiddleChapter, MiddleKnowledgePoint } from "@/math-engine/middle-school/course/types";
+import type { MiddleStage, MiddleChapter } from "@/math-engine/middle-school/course/types";
 import { JUNIOR_STAGE } from "@/math-engine/middle-school/course/junior-course-data";
 import { LatexView } from "@/components/common/LatexView";
 import { VectorCanvas } from "@/components/linear-algebra/VectorCanvas";
@@ -48,9 +48,8 @@ export default function MiddleSchoolPage() {
   const [teacherMode, setTeacherMode] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [showVisual, setShowVisual] = useState(true);
-  const [showStagePicker, setShowStagePicker] = useState(false);
 
-  const sp = stage === "junior" ? progress.junior : progress.senior;
+  const sp = progress.junior;
   const chapters = useMemo(() => (stage === "junior" ? JUNIOR_STAGE.chapters : []), [stage]);
   const [currentChId, setCurrentChId] = useState(sp.lastChapter || chapters[0]?.id || "");
   const [pointIdx, setPointIdx] = useState(sp.lastPointIndex);
@@ -118,15 +117,8 @@ export default function MiddleSchoolPage() {
         <div className="flex items-center gap-3">
           <Link href="/subjects" className="text-xs text-primary-600 hover:underline">← 学科模块</Link>
           <span className="h-4 w-px bg-slate-200" />
-          <button onClick={() => setShowStagePicker(!showStagePicker)} className={`rounded border px-2.5 py-1 text-xs font-medium ${stage === "junior" ? "border-primary-300 bg-primary-50 text-primary-700" : "border-slate-300 text-slate-600"}`}>
-            {stage === "junior" ? "初中数学" : "高中数学"} ▾
-          </button>
-          {showStagePicker && (
-            <div className="absolute left-[180px] top-[52px] z-50 rounded-lg border border-slate-200 bg-white p-2 shadow-lg">
-              <button onClick={() => { switchStage("junior"); setShowStagePicker(false); }} className={`block w-full rounded px-3 py-2 text-left text-sm ${stage === "junior" ? "bg-primary-50 text-primary-700" : "text-slate-600 hover:bg-slate-50"}`}>初中数学</button>
-              <Link href="/subjects/middle-school/senior" className="block w-full rounded px-3 py-2 text-left text-sm text-slate-600 hover:bg-slate-50" onClick={() => setShowStagePicker(false)}>高中数学 →</Link>
-            </div>
-          )}
+          <span className="rounded border border-primary-300 bg-primary-50 px-2.5 py-1 text-xs font-medium text-primary-700">初中数学</span>
+          <Link href="/subjects/middle-school/senior" className="rounded border border-slate-300 px-2.5 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50">高中数学</Link>
         </div>
         <div className="flex items-center gap-2">
           <button onClick={() => setShowVisual(!showVisual)} className={`rounded border px-2.5 py-1 text-xs ${showVisual ? "border-primary-300 bg-primary-50 text-primary-700" : "border-slate-300 text-slate-600"}`}>{showVisual ? "隐藏可视化" : "显示可视化"}</button>

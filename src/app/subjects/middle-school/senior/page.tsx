@@ -80,8 +80,10 @@ export default function SeniorMathPage() {
     <div className="mx-auto flex min-h-[calc(100vh-108px)] max-w-[1600px] flex-col">
       <div className="flex items-center justify-between border-b border-slate-200 bg-white px-4 py-2">
         <div className="flex items-center gap-3">
-          <Link href="/subjects/middle-school" className="text-xs text-primary-600 hover:underline">← 中学数学</Link>
+          <Link href="/subjects" className="text-xs text-primary-600 hover:underline">← 学科模块</Link>
           <span className="h-4 w-px bg-slate-200" />
+          <Link href="/subjects/middle-school" className={`rounded border px-2.5 py-1 text-xs font-medium border-slate-300 text-slate-600 hover:bg-slate-50`}>初中数学</Link>
+          <span className="rounded border border-primary-300 bg-primary-50 px-2.5 py-1 text-xs font-medium text-primary-700">高中数学</span>
           <span className="text-sm font-semibold text-slate-800">高中数学</span>
         </div>
         <div className="flex items-center gap-2">
