@@ -84,7 +84,6 @@ export default function SeniorMathPage() {
           <span className="h-4 w-px bg-slate-200" />
           <Link href="/subjects/middle-school" className={`rounded border px-2.5 py-1 text-xs font-medium border-slate-300 text-slate-600 hover:bg-slate-50`}>初中数学</Link>
           <span className="rounded border border-primary-300 bg-primary-50 px-2.5 py-1 text-xs font-medium text-primary-700">高中数学</span>
-          <span className="text-sm font-semibold text-slate-800">高中数学</span>
         </div>
         <div className="flex items-center gap-2">
           <button onClick={()=>setShowVis(!showVis)} className={`rounded border px-2.5 py-1 text-xs ${showVis?"border-primary-300 bg-primary-50 text-primary-700":"border-slate-300 text-slate-600"}`}>{showVis?"隐藏可视化":"显示可视化"}</button>
