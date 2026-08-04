@@ -7,55 +7,7 @@ import { COURSE_CHAPTERS } from "@/math-engine/linear-algebra";
 import { ChapterNav } from "@/components/linear-algebra/ChapterNav";
 import { KnowledgeSection } from "@/components/linear-algebra/KnowledgeSection";
 import { ExercisePanel } from "@/components/linear-algebra/ExercisePanel";
-import { VectorCanvas } from "@/components/linear-algebra/VectorCanvas";
-import { MatrixCanvas } from "@/components/linear-algebra/MatrixCanvas";
-import { GaussCanvas } from "@/components/linear-algebra/GaussCanvas";
-import { DeterminantVis } from "@/components/linear-algebra/DeterminantVis";
-import { EigenVis } from "@/components/linear-algebra/EigenVis";
-import { VectorSpaceVis } from "@/components/linear-algebra/VectorSpaceVis";
-import { LeastSquaresVis } from "@/components/linear-algebra/LeastSquaresVis";
-
-type VisComponent = React.FC<{ knowledgePointId?: string }>;
-
-const VISUAL_MAP: Record<string, VisComponent> = {
-  vectors: VectorsVis,
-  matrices: MatrixVis,
-  "linear-systems": GaussVis,
-  "linear-transforms": MatrixVis,
-  determinants: DetVis,
-  eigenvalues: EigenVis_,
-  "vector-spaces": SpaceVis,
-  applications: LSVis,
-};
-
-function VectorsVis() {
-  return <VectorCanvas height={380} showSum showDot />;
-}
-function MatrixVis() {
-  return <MatrixCanvas height={380} />;
-}
-function GaussVis() {
-  return <GaussCanvas />;
-}
-function DetVis() {
-  return <DeterminantVis height={380} />;
-}
-function EigenVis_() {
-  return <EigenVis height={380} />;
-}
-function SpaceVis() {
-  return <VectorSpaceVis height={420} />;
-}
-function LSVis() {
-  return <LeastSquaresVis height={420} />;
-}
-function NoVis() {
-  return (
-    <div className="flex h-[200px] items-center justify-center rounded-lg border border-dashed border-slate-300 text-xs text-slate-400">
-      综合应用章节无独立可视化，请使用前面的交互工具
-    </div>
-  );
-}
+import { VisualizationPanel } from "@/components/linear-algebra/VisualizationPanel";
 
 const LS_KEY = "math-canvas-la-progress";
 
@@ -169,8 +121,6 @@ export default function LinearAlgebraPage() {
     };
     setProgress(newProgress);
   }, [currentPoint, currentChapter, currentChapterId, progress]);
-
-  const VisComponent = VISUAL_MAP[currentChapterId] ?? NoVis;
 
   return (
     <div className="mx-auto flex min-h-[calc(100vh-108px)] max-w-[1600px] flex-col">
@@ -338,7 +288,7 @@ export default function LinearAlgebraPage() {
             {showVisual && (
               <div className="border-b border-slate-200 p-4">
                 <h4 className="mb-3 text-sm font-medium text-slate-700">交互可视化</h4>
-                <VisComponent knowledgePointId={currentPoint?.id} />
+                <VisualizationPanel chapterId={currentChapterId} knowledgePointId={currentPoint?.id} />
               </div>
             )}
 
