@@ -7,7 +7,13 @@ import { COURSE_CHAPTERS } from "@/math-engine/linear-algebra";
 import { ChapterNav } from "@/components/linear-algebra/ChapterNav";
 import { KnowledgeSection } from "@/components/linear-algebra/KnowledgeSection";
 import { ExercisePanel } from "@/components/linear-algebra/ExercisePanel";
-import { VisualizationPanel } from "@/components/linear-algebra/VisualizationPanel";
+import { VectorCanvas } from "@/components/linear-algebra/VectorCanvas";
+import { MatrixCanvas } from "@/components/linear-algebra/MatrixCanvas";
+import { GaussCanvas } from "@/components/linear-algebra/GaussCanvas";
+import { DeterminantVis } from "@/components/linear-algebra/DeterminantVis";
+import { EigenVis } from "@/components/linear-algebra/EigenVis";
+import { VectorSpaceVis } from "@/components/linear-algebra/VectorSpaceVis";
+import { LeastSquaresVis } from "@/components/linear-algebra/LeastSquaresVis";
 
 const LS_KEY = "math-canvas-la-progress";
 
@@ -288,7 +294,14 @@ export default function LinearAlgebraPage() {
             {showVisual && (
               <div className="border-b border-slate-200 p-4">
                 <h4 className="mb-3 text-sm font-medium text-slate-700">交互可视化</h4>
-                <VisualizationPanel chapterId={currentChapterId} knowledgePointId={currentPoint?.id} />
+                {currentChapterId === "vectors" && <VectorCanvas height={380} showSum showDot />}
+                {currentChapterId === "matrices" && <MatrixCanvas height={380} />}
+                {currentChapterId === "linear-transforms" && <MatrixCanvas height={380} />}
+                {currentChapterId === "linear-systems" && <GaussCanvas />}
+                {currentChapterId === "determinants" && <DeterminantVis height={380} />}
+                {currentChapterId === "eigenvalues" && <EigenVis height={380} />}
+                {currentChapterId === "vector-spaces" && <VectorSpaceVis height={420} />}
+                {currentChapterId === "applications" && <LeastSquaresVis height={420} />}
               </div>
             )}
 
