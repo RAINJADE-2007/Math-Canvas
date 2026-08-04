@@ -1,15 +1,12 @@
 import type { SubjectModule } from "@/subjects/types";
 
-function createPlaceholderModule(): SubjectModule {
-  return {
-    id: "linear-algebra",
-    name: "线性代数",
-    description: "计划支持矩阵、向量、线性方程组、线性变换等线性代数内容（开发中）",
-    enabled: false,
-    supportedObjectTypes: [],
-    supportedProblemTypes: [],
-    canHandle: () => false,
-  };
-}
-
-export const linearAlgebraModule = createPlaceholderModule();
+export const linearAlgebraModule: SubjectModule = {
+  id: "linear-algebra",
+  name: "线性代数",
+  description:
+    "从向量基础到特征值与特征向量，涵盖线性代数核心内容。交互式可视化、分层练习和教师演示功能。",
+  enabled: true,
+  supportedObjectTypes: [],
+  supportedProblemTypes: [],
+  canHandle: () => true,
+};
