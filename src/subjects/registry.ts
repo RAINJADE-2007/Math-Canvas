@@ -4,6 +4,7 @@ import { middleSchoolModule } from "@/subjects/middle-school";
 import { calculusIntroModule } from "@/subjects/calculus-intro";
 import { calculusModule } from "@/subjects/calculus";
 import { linearAlgebraModule } from "@/subjects/linear-algebra";
+import { mathCanvasModule } from "@/subjects/math-canvas";
 import { probabilityModule } from "@/subjects/probability";
 import { complexAnalysisModule } from "@/subjects/complex-analysis";
 
@@ -12,6 +13,7 @@ export const SUBJECT_MODULES: Record<SubjectId, SubjectModule> = {
   "calculus-intro": calculusIntroModule,
   calculus: calculusModule,
   "linear-algebra": linearAlgebraModule,
+  "math-canvas": mathCanvasModule,
   probability: probabilityModule,
   "complex-analysis": complexAnalysisModule,
 };

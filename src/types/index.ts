@@ -3,6 +3,7 @@ export type SubjectId =
   | "calculus-intro"
   | "calculus"
   | "linear-algebra"
+  | "math-canvas"
   | "probability"
   | "complex-analysis";
 

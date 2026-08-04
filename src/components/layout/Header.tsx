@@ -3,7 +3,7 @@ import { APP_NAME, APP_NAME_ZH, TAGLINE } from "@/constants/app";
 
 const NAV_LINKS = [
   { href: "/", label: "首页" },
-  { href: "/canvas", label: "数学画布" },
+  { href: "/subjects/math-canvas", label: "数学画布" },
   { href: "/subjects", label: "学科模块" },
   { href: "/about", label: "项目说明" },
 ];

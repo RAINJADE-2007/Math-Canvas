@@ -54,7 +54,7 @@ export default async function SubjectDetailPage({ params }: SubjectDetailPagePro
       {meta.enabled ? (
         <div className="mt-8 flex flex-wrap gap-3">
           <Link
-            href="/canvas"
+            href="/subjects/math-canvas"
             className="rounded-lg bg-primary-600 px-6 py-2.5 text-sm font-medium text-white transition-colors hover:bg-primary-700"
           >
             进入{meta.name}画布
