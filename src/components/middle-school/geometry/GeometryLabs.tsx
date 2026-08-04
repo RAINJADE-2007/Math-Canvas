@@ -343,8 +343,10 @@ export function SolidGeometryLab() {
   const [a, setA] = useState(2); const [r, setR] = useState(2); const [h, setH] = useState(3);
   const [rotY, setRotY] = useState(30); const [rotX, setRotX] = useState(20);
   const [zoom, setZoom] = useState(1);
-  const [dragging, setDragging] = useState(false);
   const svgRef = useRef<SVGSVGElement>(null);
+  const dragRef = useRef({ active: false, pointerId: -1, lastX: 0, lastY: 0 });
+  const rotYRef = useRef(rotY); const rotXRef = useRef(rotX); const zoomRef = useRef(zoom);
+  rotYRef.current = rotY; rotXRef.current = rotX; zoomRef.current = zoom;
   const vb = { w: 320, h: 280, cx: 160, cy: 160 };
 
   const toScreen = useCallback((x: number, y: number, z: number) => {
@@ -352,90 +354,250 @@ export function SolidGeometryLab() {
     const x1 = x * Math.cos(radY) + z * Math.sin(radY);
     const z1 = -x * Math.sin(radY) + z * Math.cos(radY);
     const y1 = y * Math.cos(radX) - z1 * Math.sin(radX);
-    return { sx: vb.cx + x1 * 22 * zoom, sy: vb.cy - y1 * 22 * zoom };
+    return { sx: vb.cx + x1 * 22 * zoom, sy: vb.cy - y1 * 22 * zoom, depth: z1 };
   }, [rotY, rotX, zoom]);
 
+  // Wheel zoom
   useEffect(() => {
     const svg = svgRef.current; if (!svg) return;
-    let lastX = 0, lastY = 0;
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      const delta = e.deltaY > 0 ? -0.1 : 0.1;
+      setZoom(z => Math.max(0.5, Math.min(2.5, z + delta)));
+    };
+    svg.addEventListener("wheel", onWheel, { passive: false });
+    return () => svg.removeEventListener("wheel", onWheel);
+  }, []);
+
+  // Mouse rotation with refs (no state dependency in effect)
+  useEffect(() => {
+    const svg = svgRef.current; if (!svg) return;
     const onDown = (e: PointerEvent) => {
-      if (e.target === svg || (e.target as Element).tagName === "svg") {
-        setDragging(true); lastX = e.clientX; lastY = e.clientY;
-        svg.setPointerCapture(e.pointerId);
-      }
+      e.preventDefault();
+      dragRef.current = { active: true, pointerId: e.pointerId, lastX: e.clientX, lastY: e.clientY };
+      svg.setPointerCapture(e.pointerId);
     };
     const onMove = (e: PointerEvent) => {
-      if (!dragging) return;
-      const dx = e.clientX - lastX, dy = e.clientY - lastY;
-      setRotY(r => ((r + dx * 0.5) % 360 + 360) % 360);
-      setRotX(r => Math.max(-60, Math.min(60, r - dy * 0.5)));
-      lastX = e.clientX; lastY = e.clientY;
+      if (!dragRef.current.active) return;
+      const dx = e.clientX - dragRef.current.lastX;
+      const dy = e.clientY - dragRef.current.lastY;
+      dragRef.current.lastX = e.clientX;
+      dragRef.current.lastY = e.clientY;
+      setRotY(rotYRef.current + dx * 0.5);
+      setRotX(Math.max(-75, Math.min(75, rotXRef.current - dy * 0.5)));
     };
-    const onUp = () => { setDragging(false); };
+    const onUp = (e: PointerEvent) => {
+      if (dragRef.current.active) {
+        svg.releasePointerCapture(dragRef.current.pointerId);
+        dragRef.current.active = false;
+      }
+    };
     svg.addEventListener("pointerdown", onDown);
     svg.addEventListener("pointermove", onMove);
     svg.addEventListener("pointerup", onUp);
-    svg.addEventListener("pointerleave", onUp);
-    return () => { svg.removeEventListener("pointerdown", onDown); svg.removeEventListener("pointermove", onMove); svg.removeEventListener("pointerup", onUp); svg.removeEventListener("pointerleave", onUp); };
-  }, [dragging]);
+    svg.addEventListener("pointercancel", onUp);
+    svg.addEventListener("lostpointercapture", onUp);
+    return () => {
+      svg.removeEventListener("pointerdown", onDown);
+      svg.removeEventListener("pointermove", onMove);
+      svg.removeEventListener("pointerup", onUp);
+      svg.removeEventListener("pointercancel", onUp);
+      svg.removeEventListener("lostpointercapture", onUp);
+    };
+  }, []);
 
-  const calc = () => {
+  // View presets
+  const applyView = useCallback((rotYv: number, rotXv: number, zv: number) => { setRotY(rotYv); setRotX(rotXv); setZoom(zv); }, []);
+  const resetAll = useCallback(() => { setA(2); setR(2); setH(3); setRotY(30); setRotX(20); setZoom(1); }, []);
+
+  // Use math engine for calculations
+  const { V, SA, fV, fSA } = useMemo(() => {
     if (shape === "cube") return { V: a ** 3, SA: 6 * a * a, fV: "a³", fSA: "6a²" };
     if (shape === "cylinder") return { V: Math.PI * r * r * h, SA: 2 * Math.PI * r * (r + h), fV: "πr²h", fSA: "2πr(r+h)" };
     if (shape === "cone") { const l = Math.sqrt(r * r + h * h); return { V: Math.PI * r * r * h / 3, SA: Math.PI * r * (r + l), fV: "πr²h/3", fSA: "πr(r+l)" }; }
     return { V: 4 * Math.PI * r ** 3 / 3, SA: 4 * Math.PI * r * r, fV: "4πr³/3", fSA: "4πr²" };
-  };
-  const { V, SA, fV, fSA } = calc();
+  }, [shape, a, r, h]);
+
+  // ============= 3D Geometry Builders =============
 
   const drawCube = () => {
     const verts = [
       toScreen(-a / 2, -a / 2, -a / 2), toScreen(a / 2, -a / 2, -a / 2), toScreen(a / 2, -a / 2, a / 2), toScreen(-a / 2, -a / 2, a / 2),
       toScreen(-a / 2, a / 2, -a / 2), toScreen(a / 2, a / 2, -a / 2), toScreen(a / 2, a / 2, a / 2), toScreen(-a / 2, a / 2, a / 2),
     ];
-    const faces = [[0, 1, 2, 3], [4, 5, 6, 7], [0, 1, 5, 4], [2, 3, 7, 6], [0, 3, 7, 4], [1, 2, 6, 5]];
-    return faces.map((f, i) => {
-      const pts = f.map(j => `${verts[j].sx},${verts[j].sy}`).join(" ");
-      return <polygon key={i} points={pts} fill={i < 2 ? "rgba(37,99,235,0.04)" : "rgba(37,99,235,0.1)"} stroke="#2563eb" strokeWidth={1} />;
+    // Faces with indices: each face = [index list, color, name]
+    const faces: [number[], string, string][] = [
+      [[0, 1, 2, 3], "rgba(37,99,235,0.12)", "bot"],  // bottom
+      [[4, 5, 6, 7], "rgba(37,99,235,0.08)", "top"],   // top
+      [[0, 1, 5, 4], "rgba(37,99,235,0.1)", "front"],   // front-ish
+      [[2, 3, 7, 6], "rgba(37,99,235,0.1)", "back"],    // back-ish
+      [[0, 3, 7, 4], "rgba(37,99,235,0.07)", "left"],   // left
+      [[1, 2, 6, 5], "rgba(37,99,235,0.07)", "right"],  // right
+    ];
+    // Sort faces by depth (average z of projected vertices)
+    const sorted = [...faces].sort((a, b) => {
+      const avgZ = (indices: number[]) => indices.reduce((s, i) => s + verts[i].depth, 0) / indices.length;
+      return avgZ(b[0]) - avgZ(a[0]);
     });
+    // Edges (all 12)
+    const edges = [[0, 1], [1, 2], [2, 3], [3, 0], [4, 5], [5, 6], [6, 7], [7, 4], [0, 4], [1, 5], [2, 6], [3, 7]];
+    return (
+      <g>
+        {sorted.map(([indices, fill], i) => {
+          const pts = indices.map(j => `${verts[j].sx},${verts[j].sy}`).join(" ");
+          return <polygon key={`f${i}`} points={pts} fill={fill} stroke="#2563eb" strokeWidth={1} />;
+        })}
+        {edges.map(([i, j]) => {
+          const midZ = (verts[i].depth + verts[j].depth) / 2;
+          return <line key={`e${i}${j}`} x1={verts[i].sx} y1={verts[i].sy} x2={verts[j].sx} y2={verts[j].sy}
+            stroke="#93c5fd" strokeWidth={0.6} opacity={midZ < 0 ? 0.3 : 0.8} />;
+        })}
+      </g>
+    );
+  };
+
+  const drawCylinder = () => {
+    const n = 24; const el: React.ReactNode[] = [];
+    const top: { sx: number; sy: number; depth: number }[] = [], bot: { sx: number; sy: number; depth: number }[] = [];
+    for (let i = 0; i <= n; i++) {
+      const a = i * 2 * Math.PI / n;
+      bot.push(toScreen(r * Math.cos(a), -h / 2, r * Math.sin(a)));
+      top.push(toScreen(r * Math.cos(a), h / 2, r * Math.sin(a)));
+    }
+    // Bottom ellipse
+    const botPts = bot.map(v => `${v.sx},${v.sy}`).join(" ");
+    el.push(<ellipse key="bot" cx={vb.cx} cy={vb.cy + h / 2 * 22 * zoom * Math.sin(rotX * Math.PI / 180)} rx={r * 22 * zoom}
+      ry={r * 22 * zoom * Math.abs(Math.cos(rotX * Math.PI / 180)) * 0.5 + 4} fill="rgba(37,99,235,0.08)" stroke="#2563eb" strokeWidth={1} />);
+    // Top ellipse  
+    el.push(<ellipse key="top" cx={vb.cx} cy={vb.cy - h / 2 * 22 * zoom * Math.sin(rotX * Math.PI / 180)} rx={r * 22 * zoom}
+      ry={r * 22 * zoom * Math.abs(Math.cos(rotX * Math.PI / 180)) * 0.5 + 4} fill="rgba(37,99,235,0.15)" stroke="#2563eb" strokeWidth={1.5} />);
+    // Side lines
+    for (let i = 0; i < n; i += 2) {
+      el.push(<line key={`s${i}`} x1={bot[i].sx} y1={bot[i].sy} x2={top[i].sx} y2={top[i].sy} stroke="#93c5fd" strokeWidth={0.4} />);
+    }
+    // Radius label
+    el.push(<line key="rad" x1={vb.cx} y1={vb.cy - h / 2 * 22 * zoom * Math.sin(rotX * Math.PI / 180)}
+      x2={vb.cx + r * 22 * zoom} y2={vb.cy - h / 2 * 22 * zoom * Math.sin(rotX * Math.PI / 180)} stroke="#dc2626" strokeWidth={1} strokeDasharray="3,2" />);
+    return <g>{el}</g>;
+  };
+
+  const drawCone = () => {
+    const n = 24; const el: React.ReactNode[] = [];
+    const bot: { sx: number; sy: number; depth: number }[] = [];
+    for (let i = 0; i <= n; i++) {
+      const a = i * 2 * Math.PI / n;
+      bot.push(toScreen(r * Math.cos(a), -h / 2, r * Math.sin(a)));
+    }
+    const tip = toScreen(0, h / 2, 0);
+    // Bottom ellipse
+    const botCy = vb.cy + h / 2 * 22 * zoom * Math.sin(rotX * Math.PI / 180);
+    el.push(<ellipse key="bot" cx={vb.cx} cy={botCy} rx={r * 22 * zoom}
+      ry={r * 22 * zoom * Math.abs(Math.cos(rotX * Math.PI / 180)) * 0.5 + 4} fill="rgba(37,99,235,0.06)" stroke="#2563eb" strokeWidth={1} />);
+    // Side lines from tip to base
+    for (let i = 0; i < n; i += 3) {
+      el.push(<line key={`s${i}`} x1={tip.sx} y1={tip.sy} x2={bot[i].sx} y2={bot[i].sy} stroke="#93c5fd" strokeWidth={0.4} />);
+    }
+    // Outline
+    const leftBot = toScreen(-r, -h / 2, 0), rightBot = toScreen(r, -h / 2, 0);
+    el.push(<line key="ol" x1={tip.sx} y1={tip.sy} x2={leftBot.sx} y2={leftBot.sy} stroke="#2563eb" strokeWidth={1.5} />);
+    el.push(<line key="or" x1={tip.sx} y1={tip.sy} x2={rightBot.sx} y2={rightBot.sy} stroke="#2563eb" strokeWidth={1.5} />);
+    // Tip point
+    el.push(<circle key="tip" cx={tip.sx} cy={tip.sy} r={3} fill="#2563eb" />);
+    return <g>{el}</g>;
+  };
+
+  const drawSphere = () => {
+    const el: React.ReactNode[] = [];
+    // Main outline
+    el.push(<circle key="outline" cx={vb.cx} cy={vb.cy} r={r * 22 * zoom} fill="rgba(37,99,235,0.04)" stroke="#2563eb" strokeWidth={1.5} />);
+    // Equator (ellipse in isometric)
+    el.push(<ellipse key="equator" cx={vb.cx} cy={vb.cy} rx={r * 22 * zoom}
+      ry={r * 22 * zoom * Math.abs(Math.cos(rotX * Math.PI / 180)) * 0.4 + 4} fill="none" stroke="#93c5fd" strokeWidth={0.6} />);
+    // Meridian (vertical ellipse)
+    el.push(<ellipse key="meridian" cx={vb.cx} cy={vb.cy}
+      rx={r * 22 * zoom * Math.abs(Math.cos(rotY * Math.PI / 180)) * 0.3 + 4} ry={r * 22 * zoom} fill="none" stroke="#93c5fd" strokeWidth={0.6} />);
+    // Center + radius line
+    el.push(<circle key="center" cx={vb.cx} cy={vb.cy} r={2.5} fill="#dc2626" />);
+    el.push(<line key="rad" x1={vb.cx} y1={vb.cy} x2={vb.cx + r * 22 * zoom} y2={vb.cy} stroke="#dc2626" strokeWidth={1} strokeDasharray="3,2" />);
+    el.push(<text key="ol" x={vb.cx + r * 11 * zoom} y={vb.cy - 8} fill="#dc2626" fontSize={10}>r={r}</text>);
+    return <g>{el}</g>;
   };
 
   const shapeLabels: Record<string, string> = { cube: "正方体", cylinder: "圆柱", cone: "圆锥", sphere: "球体" };
+
+  const gridColor = (v: string) => shape === v ? "border-primary-400 bg-primary-50 text-primary-700" : "border-slate-300 hover:bg-slate-50";
+
+  const isDragging = dragRef.current.active;
 
   return (
     <div className="space-y-2">
       <h4 className="text-sm font-medium text-slate-700">📦 立体几何实验室</h4>
       <div className="rounded-lg border border-slate-200 bg-white p-2">
-        <svg ref={svgRef} viewBox={`0 0 ${vb.w} ${vb.h}`} className="h-64 w-full touch-none" style={{ cursor: dragging ? "grabbing" : "grab" }} aria-label="旋转查看3D几何体">
+        <svg ref={svgRef} viewBox={`0 0 ${vb.w} ${vb.h}`} className="h-64 w-full touch-none"
+          style={{ cursor: isDragging ? "grabbing" : "grab" }} aria-label="旋转查看3D几何体">
           {shape === "cube" && drawCube()}
-          {shape === "cylinder" && <ellipse cx={vb.cx} cy={vb.cy} rx={r * 22 * zoom} ry={r * 22 * zoom * 0.4} fill="rgba(37,99,235,0.1)" stroke="#2563eb" strokeWidth={1} />}
-          {shape === "sphere" && <circle cx={vb.cx} cy={vb.cy} r={r * 22 * zoom} fill="rgba(37,99,235,0.06)" stroke="#2563eb" strokeWidth={1.5} />}
-          {shape === "cone" && <polygon points={`${vb.cx},${vb.cy - h * 22 * zoom / 2} ${vb.cx - r * 22 * zoom},${vb.cy + h * 22 * zoom / 2} ${vb.cx + r * 22 * zoom},${vb.cy + h * 22 * zoom / 2}`} fill="rgba(37,99,235,0.05)" stroke="#2563eb" strokeWidth={1} />}
+          {shape === "cylinder" && drawCylinder()}
+          {shape === "cone" && drawCone()}
+          {shape === "sphere" && drawSphere()}
         </svg>
       </div>
+      {/* View presets */}
+      <div className="flex flex-wrap gap-1 text-xs">
+        <button onClick={() => applyView(30, 20, 1)} className="rounded border border-slate-300 px-1.5 py-0.5 hover:bg-slate-50" title="默认视角">默认</button>
+        <button onClick={() => applyView(0, 0, 1)} className="rounded border border-slate-300 px-1.5 py-0.5 hover:bg-slate-50" title="正视">正视</button>
+        <button onClick={() => applyView(90, 0, 1)} className="rounded border border-slate-300 px-1.5 py-0.5 hover:bg-slate-50" title="侧视">侧视</button>
+        <button onClick={() => applyView(0, 90, 1)} className="rounded border border-slate-300 px-1.5 py-0.5 hover:bg-slate-50" title="俯视">俯视</button>
+        <button onClick={() => applyView(45, 35, 1)} className="rounded border border-slate-300 px-1.5 py-0.5 hover:bg-slate-50" title="等轴测">等轴测</button>
+      </div>
+      {/* Shape selector */}
       <div className="flex flex-wrap gap-1 text-xs">
         {(["cube", "cylinder", "cone", "sphere"] as const).map(s =>
-          <button key={s} onClick={() => setShape(s)} className={`rounded border px-2 py-0.5 ${shape === s ? "border-primary-400 bg-primary-50 text-primary-700" : "border-slate-300 hover:bg-slate-50"}`}>{shapeLabels[s]}</button>
+          <button key={s} onClick={() => setShape(s)} className={`rounded border px-2 py-0.5 ${gridColor(s)}`}>{shapeLabels[s]}</button>
         )}
       </div>
+      {/* Parameters */}
       <div className="flex flex-wrap items-center gap-2 text-xs">
-        {shape !== "sphere" && <span className="flex items-center gap-1">h:<input type="range" min={1} max={6} step={0.5} value={h} onChange={e => setH(parseFloat(e.target.value))} className="h-1 w-16" /><span className="font-mono w-5">{h}</span></span>}
-        {(shape === "cube" || shape === "sphere") && <span className="flex items-center gap-1">{shape === "cube" ? "a:" : "r:"}<input type="range" min={1} max={5} step={0.5} value={a} onChange={e => setA(parseFloat(e.target.value))} className="h-1 w-16" /><span className="font-mono w-5">{a}</span></span>}
-        {(shape === "cylinder" || shape === "cone") && <span className="flex items-center gap-1">r:<input type="range" min={1} max={4} step={0.5} value={r} onChange={e => setR(parseFloat(e.target.value))} className="h-1 w-16" /><span className="font-mono w-5">{r}</span></span>}
-        <span className="flex items-center gap-1">🔍<input type="range" min={0.5} max={2.5} step={0.1} value={zoom} onChange={e => setZoom(parseFloat(e.target.value))} className="h-1 w-16" /><span className="font-mono w-8">{zoom.toFixed(1)}x</span></span>
-        <button onClick={() => { setRotY(30); setRotX(20); setZoom(1); }} className="rounded border border-slate-300 px-1.5 py-0.5 hover:bg-slate-50 text-[10px]">重置视图</button>
+        {shape === "cube" && (
+          <span className="flex items-center gap-1">
+            棱长a:<input type="range" min={0.5} max={5} step={0.5} value={a} onChange={e => setA(parseFloat(e.target.value))} className="h-1 w-16" />
+            <input type="number" min={0.1} max={10} step={0.5} value={a} onChange={e => setA(Math.max(0.1, parseFloat(e.target.value) || 0.1))} className="w-14 rounded border border-slate-300 px-1 text-center" />
+          </span>
+        )}
+        {(shape === "cylinder" || shape === "cone") && (
+          <>
+            <span className="flex items-center gap-1">
+              r:<input type="range" min={0.5} max={4} step={0.5} value={r} onChange={e => setR(parseFloat(e.target.value))} className="h-1 w-16" />
+              <input type="number" min={0.1} max={10} step={0.5} value={r} onChange={e => setR(Math.max(0.1, parseFloat(e.target.value) || 0.1))} className="w-14 rounded border border-slate-300 px-1 text-center" />
+            </span>
+            <span className="flex items-center gap-1">
+              h:<input type="range" min={0.5} max={6} step={0.5} value={h} onChange={e => setH(parseFloat(e.target.value))} className="h-1 w-16" />
+              <input type="number" min={0.1} max={20} step={0.5} value={h} onChange={e => setH(Math.max(0.1, parseFloat(e.target.value) || 0.1))} className="w-14 rounded border border-slate-300 px-1 text-center" />
+            </span>
+            {shape === "cone" && <span className="text-slate-400">l=√(r²+h²)={(Math.sqrt(r*r + h*h)).toFixed(1)}</span>}
+          </>
+        )}
+        {shape === "sphere" && (
+          <span className="flex items-center gap-1">
+            半径r:<input type="range" min={0.5} max={5} step={0.5} value={r} onChange={e => setR(parseFloat(e.target.value))} className="h-1 w-16" />
+            <input type="number" min={0.1} max={10} step={0.5} value={r} onChange={e => setR(Math.max(0.1, parseFloat(e.target.value) || 0.1))} className="w-14 rounded border border-slate-300 px-1 text-center" />
+          </span>
+        )}
+        <span className="flex items-center gap-1">
+          🔍<input type="range" min={0.5} max={2.5} step={0.1} value={zoom} onChange={e => setZoom(parseFloat(e.target.value))} className="h-1 w-16" />
+          <span className="font-mono w-8">{zoom.toFixed(1)}x</span>
+        </span>
+        <button onClick={resetAll} className="rounded border border-slate-300 px-1.5 py-0.5 hover:bg-slate-50 text-[10px]">重置</button>
       </div>
       <div className="grid grid-cols-2 gap-1 text-xs">
         <div className="rounded bg-blue-50 p-1.5"><span className="text-slate-500">V = </span><span className="font-mono font-bold">{V.toFixed(1)}</span><span className="text-slate-400 ml-1">({fV})</span></div>
         <div className="rounded bg-blue-50 p-1.5"><span className="text-slate-500">SA = </span><span className="font-mono font-bold">{SA.toFixed(1)}</span><span className="text-slate-400 ml-1">({fSA})</span></div>
       </div>
       <div className="rounded bg-slate-100 px-2 py-1 text-center text-[10px] text-slate-500">
-        💡 鼠标拖动旋转视角 &nbsp;|&nbsp; 滚轮缩放 &nbsp;|&nbsp; 选择几何体查看公式
+        💡 拖动旋转 &nbsp;|&nbsp; 滚轮缩放({zoom.toFixed(1)}x) &nbsp;|&nbsp; 默认/正视/侧视/俯视/等轴测
       </div>
     </div>
   );
 }
-
-import { calcTriangleProps as ctp2, isValidTriangle as ivt2 } from "@/math-engine/middle-school/geometry/triangle";
 
 export function PythagoreanLab() {
   const [ax, setAx] = useState(0); const [ay, setAy] = useState(0);

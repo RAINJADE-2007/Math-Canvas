@@ -8,7 +8,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "test": "tsx --test tests/multivariate/*.test.ts",
+    "test": "tsx --test tests/multivariate/*.test.ts tests/middle-school-geometry/*.test.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
