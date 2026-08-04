@@ -1,6 +1,10 @@
 "use client";
 
-import { useRef, useEffect, useCallback, useState } from "react";
+import { useRef, useEffect, useState, useCallback } from "react";
+import type JXG from "jsxgraph";
+import "@/styles/jsxgraph.css";
+
+type Board = JXG.Board;
 
 interface MatrixCanvasProps {
   initialMatrix?: number[][];
@@ -11,146 +15,198 @@ export function MatrixCanvas({
   initialMatrix = [[2, 1], [0.5, 1.5]],
   height = 440,
 }: MatrixCanvasProps) {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const boardRef = useRef<Board | null>(null);
+  const jxgRef = useRef<typeof JXG | null>(null);
+  const elementsRef = useRef<JXG.GeometryElement[]>([]);
+  const [ready, setReady] = useState(false);
   const [matrix, setMatrix] = useState(initialMatrix.map((r) => [...r]));
+  const [hoverCoord, setHoverCoord] = useState<{ x: number; y: number } | null>(null);
+  const [viewLevel, setViewLevel] = useState(100);
+  const containerId = useRef(`mat-canvas-${Math.random().toString(36).slice(2, 8)}`).current;
 
-  const draw = useCallback(() => {
-    const squarePoints = [
-      [0, 0], [1, 0], [1, 1], [0, 1],
-    ];
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
+  const redraw = useCallback(() => {
+    const board = boardRef.current;
+    const JXG = jxgRef.current;
+    if (!board || !JXG) return;
 
-    const { width: w, height: h } = canvas;
-    const dpr = window.devicePixelRatio || 1;
-    canvas.width = w * dpr;
-    canvas.height = h * dpr;
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    const old = elementsRef.current;
+    for (const el of old) {
+      try { board.removeObject(el); } catch { /* */ }
+    }
+    old.length = 0;
+    const add = (el: JXG.GeometryElement) => { old.push(el); return el; };
 
-    ctx.clearRect(0, 0, w, h);
-    ctx.fillStyle = "#f8fafc";
-    ctx.fillRect(0, 0, w, h);
-
-    const scale = Math.min(w, h) / 20;
-    const cx = w / 2;
-    const cy = h / 2;
     const [[a, b], [c, d]] = matrix;
-
-    const toScreen = (x: number, y: number) => ({
-      sx: cx + x * scale,
-      sy: cy - y * scale,
-    });
-
-    // Original grid (faded)
-    ctx.strokeStyle = "#e2e8f0";
-    ctx.lineWidth = 0.5;
-    for (let i = -6; i <= 6; i++) {
-      const pt = toScreen(i, -6);
-      const pb = toScreen(i, 6);
-      ctx.beginPath();
-      ctx.moveTo(pt.sx, pt.sy);
-      ctx.lineTo(pb.sx, pb.sy);
-      ctx.stroke();
-    }
-    for (let i = -6; i <= 6; i++) {
-      const pl = toScreen(-6, i);
-      const pr = toScreen(6, i);
-      ctx.beginPath();
-      ctx.moveTo(pl.sx, pl.sy);
-      ctx.lineTo(pr.sx, pr.sy);
-      ctx.stroke();
-    }
-
-    // Transformed grid
-    ctx.strokeStyle = "#93c5fd";
-    ctx.lineWidth = 0.8;
-    const gridRange = [-5, -4, -3, -2, -1, 0, 1, 2, 3, 4, 5];
-    gridRange.forEach((v) => {
-      const pts: Array<[number, number]> = [];
-      for (let t = -5; t <= 5; t += 0.2) {
-        pts.push([a * v + b * t, c * v + d * t]);
-      }
-      ctx.beginPath();
-      pts.forEach(([tx, ty], idx) => {
-        const s = toScreen(tx, ty);
-        if (idx === 0) ctx.moveTo(s.sx, s.sy);
-        else ctx.lineTo(s.sx, s.sy);
-      });
-      ctx.stroke();
-    });
-    gridRange.forEach((v) => {
-      const pts: Array<[number, number]> = [];
-      for (let t = -5; t <= 5; t += 0.2) {
-        pts.push([a * t + b * v, c * t + d * v]);
-      }
-      ctx.beginPath();
-      pts.forEach(([tx, ty], idx) => {
-        const s = toScreen(tx, ty);
-        if (idx === 0) ctx.moveTo(s.sx, s.sy);
-        else ctx.lineTo(s.sx, s.sy);
-      });
-      ctx.stroke();
-    });
-
-    // Axes
-    ctx.strokeStyle = "#94a3b8";
-    ctx.lineWidth = 2;
-    const origin = toScreen(0, 0);
-    ctx.beginPath();
-    ctx.moveTo(0, origin.sy);
-    ctx.lineTo(w, origin.sy);
-    ctx.stroke();
-    ctx.beginPath();
-    ctx.moveTo(origin.sx, 0);
-    ctx.lineTo(origin.sx, h);
-    ctx.stroke();
-
-    // Transformed basis vectors
-    const iEnd = toScreen(a, c);
-    const jEnd = toScreen(b, d);
-    drawArrow(ctx, origin.sx, origin.sy, iEnd.sx, iEnd.sy, "#2563eb", 3, "i'");
-    drawArrow(ctx, origin.sx, origin.sy, jEnd.sx, jEnd.sy, "#dc2626", 3, "j'");
-
-    // Original basis vectors (faded)
-    const iOrig = toScreen(1, 0);
-    const jOrig = toScreen(0, 1);
-    ctx.setLineDash([3, 3]);
-    drawArrow(ctx, origin.sx, origin.sy, iOrig.sx, iOrig.sy, "#cbd5e1", 1);
-    drawArrow(ctx, origin.sx, origin.sy, jOrig.sx, jOrig.sy, "#cbd5e1", 1);
-    ctx.setLineDash([]);
-
-    // Unit square transformed
-    const sq = squarePoints.map(([x, y]) => {
-      const tx = a * x + b * y;
-      const ty = c * x + d * y;
-      return toScreen(tx, ty);
-    });
-    ctx.fillStyle = "rgba(124, 58, 237, 0.15)";
-    ctx.beginPath();
-    ctx.moveTo(sq[0].sx, sq[0].sy);
-    for (let i = 1; i < sq.length; i++) ctx.lineTo(sq[i].sx, sq[i].sy);
-    ctx.closePath();
-    ctx.fill();
-    ctx.strokeStyle = "#7c3aed";
-    ctx.lineWidth = 2;
-    ctx.stroke();
-
-    // Labels
     const det = a * d - b * c;
-    ctx.fillStyle = "#475569";
-    ctx.font = "13px sans-serif";
-    ctx.textAlign = "left";
-    ctx.fillText(`det = ${det.toFixed(2)}`, 12, 24);
-    ctx.fillText(`面积缩放: ${Math.abs(det).toFixed(2)}`, 12, 44);
-    if (det < -0.001) ctx.fillText(`方向: 翻转`, 12, 64);
-    else if (det > 0.001) ctx.fillText(`方向: 保持`, 12, 64);
+
+    // Transformed grid lines (as curves sampled at points)
+    const range = Array.from({ length: 21 }, (_, i) => -5 + i * 0.5);
+
+    // Vertical grid lines: x = const, vary y
+    range.forEach((x0) => {
+      if (x0 === 0) return;
+      const pts: [number, number][] = [];
+      for (let t = -5; t <= 5; t += 0.2) {
+        pts.push([a * x0 + b * t, c * x0 + d * t]);
+      }
+      if (pts.length >= 2) {
+        const xs = pts.map((p) => p[0]);
+        const ys = pts.map((p) => p[1]);
+        add(board.create("curve", [xs, ys], {
+          strokeColor: "#93c5fd", strokeWidth: 0.8, withLabel: false, fixed: true,
+        }) as JXG.GeometryElement);
+      }
+    });
+
+    // Horizontal grid lines: y = const, vary x
+    range.forEach((y0) => {
+      if (y0 === 0) return;
+      const pts: [number, number][] = [];
+      for (let t = -5; t <= 5; t += 0.2) {
+        pts.push([a * t + b * y0, c * t + d * y0]);
+      }
+      if (pts.length >= 2) {
+        const xs = pts.map((p) => p[0]);
+        const ys = pts.map((p) => p[1]);
+        add(board.create("curve", [xs, ys], {
+          strokeColor: "#93c5fd", strokeWidth: 0.8, withLabel: false, fixed: true,
+        }) as JXG.GeometryElement);
+      }
+    });
+
+    // Basis vectors as arrows
+    const iEnd = add(board.create("point", [a, c], { size: 0, withLabel: false, fixed: true }) as JXG.GeometryElement);
+    const jEnd = add(board.create("point", [b, d], { size: 0, withLabel: false, fixed: true }) as JXG.GeometryElement);
+
+    add(board.create("segment", [[0, 0], iEnd], { strokeColor: "#2563eb", strokeWidth: 3 }) as JXG.GeometryElement);
+    add(board.create("segment", [[0, 0], jEnd], { strokeColor: "#dc2626", strokeWidth: 3 }) as JXG.GeometryElement);
+
+    // Arrowheads simplified as small lines
+    const aLen = Math.sqrt(a ** 2 + c ** 2);
+    if (aLen > 0.1) {
+      const ux = a / aLen, uy = c / aLen;
+      const as = Math.min(0.4, aLen / 5);
+      add(board.create("segment", [[a, c], [a - as * ux + as * 0.4 * uy, c - as * uy - as * 0.4 * ux]], { strokeColor: "#2563eb", strokeWidth: 2.5 }) as JXG.GeometryElement);
+      add(board.create("segment", [[a, c], [a - as * ux - as * 0.4 * uy, c - as * uy + as * 0.4 * ux]], { strokeColor: "#2563eb", strokeWidth: 2.5 }) as JXG.GeometryElement);
+      add(board.create("text", [a + 0.3 * ux, c + 0.3 * uy, "i'"], { fontSize: 12, strokeColor: "#2563eb", anchorX: "left" }) as JXG.GeometryElement);
+    }
+    const bLen = Math.sqrt(b ** 2 + d ** 2);
+    if (bLen > 0.1) {
+      const ux = b / bLen, uy = d / bLen;
+      const as = Math.min(0.4, bLen / 5);
+      add(board.create("segment", [[b, d], [b - as * ux + as * 0.4 * uy, d - as * uy - as * 0.4 * ux]], { strokeColor: "#dc2626", strokeWidth: 2.5 }) as JXG.GeometryElement);
+      add(board.create("segment", [[b, d], [b - as * ux - as * 0.4 * uy, d - as * uy + as * 0.4 * ux]], { strokeColor: "#dc2626", strokeWidth: 2.5 }) as JXG.GeometryElement);
+      add(board.create("text", [b + 0.3 * ux, d + 0.3 * uy, "j'"], { fontSize: 12, strokeColor: "#dc2626", anchorX: "left" }) as JXG.GeometryElement);
+    }
+
+    // Unit square transformed to parallelogram
+    const sq = [
+      [0, 0],
+      [a, c],
+      [a + b, c + d],
+      [b, d],
+    ] as [number, number][];
+    add(board.create("polygon", sq, {
+      borders: { strokeColor: "#7c3aed", strokeWidth: 2 },
+      fillColor: "rgba(124,58,237,0.12)",
+      withLabel: false,
+      vertices: { visible: false },
+      hasInnerPoints: false,
+    }) as JXG.GeometryElement);
+
+    // Faded original basis (dashed)
+    add(board.create("segment", [[0, 0], [1, 0]], {
+      strokeColor: "#cbd5e1", strokeWidth: 1, dash: 1, fixed: true,
+    }) as JXG.GeometryElement);
+    add(board.create("segment", [[0, 0], [0, 1]], {
+      strokeColor: "#cbd5e1", strokeWidth: 1, dash: 1, fixed: true,
+    }) as JXG.GeometryElement);
+
+    // Info text
+    const detStr = `det = ${det.toFixed(2)} | 面积:${Math.abs(det).toFixed(2)} | ${det < -0.001 ? "翻转" : det > 0.001 ? "保持" : "退化"}`;
+    add(board.create("text", [-7.5, 7.6, detStr], {
+      fontSize: 12, strokeColor: "#475569", anchorX: "left", anchorY: "top", fixed: true,
+    }) as JXG.GeometryElement);
+
+    try { board.update(); } catch { /* */ }
   }, [matrix]);
 
   useEffect(() => {
-    draw();
-  }, [draw]);
+    let cancelled = false;
+    (async () => {
+      const JXGModule = await import("jsxgraph");
+      const JXG = (JXGModule.default ?? JXGModule);
+      if (cancelled) return;
+      jxgRef.current = JXG;
+
+      const el = document.getElementById(containerId);
+      if (!el) return;
+
+      const board = JXG.JSXGraph.initBoard(el, {
+        boundingbox: [-8, 8, 8, -8],
+        axis: false, grid: false,
+        pan: { needTwoFingers: false },
+        zoom: { factorX: 1.2, factorY: 1.2 },
+        showNavigation: false,
+        keepaspectratio: false,
+        registerEvents: { wheel: false } as unknown as boolean,
+      }) as unknown as Board;
+
+      board.create("grid", [], { strokeColor: "#e2e8f0", fixed: true });
+      board.create("axis", [[-1000, 0], [1000, 0]], { strokeColor: "#94a3b8", strokeWidth: 1.2 });
+      board.create("axis", [[0, -1000], [0, 1000]], { strokeColor: "#94a3b8", strokeWidth: 1.2 });
+
+      board.on("update", () => {
+        const bb = board.getBoundingBox();
+        const w = Math.max(bb[2] - bb[0], 1e-6);
+        setViewLevel(Math.max(1, Math.round((20 / w) * 100)));
+      });
+
+      try {
+        board.on("move", (evt: unknown) => {
+          const b = board as unknown as { getUsrCoordsOfMouse?: (e: unknown) => [number, number] };
+          if (b.getUsrCoordsOfMouse) {
+            const coords = b.getUsrCoordsOfMouse(evt as MouseEvent);
+            if (coords) setHoverCoord({ x: coords[0], y: coords[1] });
+          }
+        });
+      } catch { /* */ }
+
+      boardRef.current = board;
+      setReady(true);
+    })();
+
+    return () => {
+      cancelled = true;
+      try {
+        const jxg = jxgRef.current;
+        const b = boardRef.current;
+        if (jxg && b && (jxg as unknown as { JSXGraph?: { freeBoard?: (b: Board) => void } }).JSXGraph?.freeBoard) {
+          (jxg as unknown as { JSXGraph: { freeBoard: (b: Board) => void } }).JSXGraph.freeBoard(b);
+        }
+      } catch { /* */ }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!ready) return;
+    const el = document.getElementById(containerId);
+    if (!el) return;
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      const b = boardRef.current;
+      if (!b) return;
+      if (e.deltaY < 0) b.zoomOut(); else b.zoomIn();
+    };
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+  }, [ready]);
+
+  useEffect(() => {
+    if (!ready) return;
+    redraw();
+  }, [ready, redraw]);
 
   const updateCell = (r: number, c: number, val: number) => {
     const m = matrix.map((row) => [...row]);
@@ -168,17 +224,33 @@ export function MatrixCanvas({
   ];
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-2">
       <div className="relative rounded-lg border border-slate-200 bg-white" style={{ height }}>
-        <canvas
-          ref={canvasRef}
-          className="h-full w-full touch-none"
-          style={{ height: "100%", width: "100%" }}
-          aria-label="矩阵变换可视化：蓝色箭头是变换后的i基向量，红色是j基向量"
-        />
+        <div id={containerId} ref={containerRef} className="h-full w-full cursor-grab" style={{ height: "100%", width: "100%" }} />
+        {!ready && (
+          <div className="absolute inset-0 flex items-center justify-center bg-white/85">
+            <div className="h-6 w-6 animate-spin rounded-full border-2 border-primary-200 border-t-primary-600" />
+          </div>
+        )}
+        {ready && (
+          <div className="absolute right-2 top-2 z-10 flex items-center gap-1 rounded-lg border border-slate-200 bg-white/95 px-1.5 py-1 shadow-card">
+            <button title="放大" onClick={() => boardRef.current?.zoomOut()} className="flex h-6 w-6 items-center justify-center rounded text-sm font-semibold text-slate-600 hover:bg-primary-50 hover:text-primary-700">＋</button>
+            <button title="缩小" onClick={() => boardRef.current?.zoomIn()} className="flex h-6 w-6 items-center justify-center rounded text-sm font-semibold text-slate-600 hover:bg-primary-50 hover:text-primary-700">−</button>
+            <button title="重置视图" onClick={() => { try { boardRef.current?.setBoundingBox([-8, 8, 8, -8]) } catch { /* */ } }} className="rounded px-1.5 py-0.5 text-[10px] font-medium text-slate-600 hover:bg-primary-50 hover:text-primary-700">重置</button>
+            <span className="w-9 text-center font-mono text-[10px] text-slate-500">{viewLevel}%</span>
+          </div>
+        )}
       </div>
 
-      <div className="flex flex-wrap gap-2 text-xs">
+      <div className="flex items-center gap-2 text-xs">
+        {hoverCoord && (
+          <span className="rounded bg-slate-50 px-2 py-1 font-mono text-slate-500">
+            x:{hoverCoord.x.toFixed(2)}, y:{hoverCoord.y.toFixed(2)}
+          </span>
+        )}
+      </div>
+
+      <div className="flex flex-wrap gap-1.5 text-xs">
         {presets.map((p) => (
           <button
             key={p.name}
@@ -192,83 +264,21 @@ export function MatrixCanvas({
 
       <div className="flex items-center gap-2 text-xs">
         <span className="font-medium text-slate-600">M =</span>
-        <input
-          type="number"
-          step={0.1}
-          value={matrix[0][0]}
-          onChange={(e) => updateCell(0, 0, parseFloat(e.target.value) || 0)}
-          className="w-14 rounded border border-slate-300 px-1.5 py-0.5 text-center"
-          aria-label="m11"
-        />
-        <input
-          type="number"
-          step={0.1}
-          value={matrix[0][1]}
-          onChange={(e) => updateCell(0, 1, parseFloat(e.target.value) || 0)}
-          className="w-14 rounded border border-slate-300 px-1.5 py-0.5 text-center"
-          aria-label="m12"
-        />
-        <span className="mx-1 text-slate-400">|</span>
-        <input
-          type="number"
-          step={0.1}
-          value={matrix[1][0]}
-          onChange={(e) => updateCell(1, 0, parseFloat(e.target.value) || 0)}
-          className="w-14 rounded border border-slate-300 px-1.5 py-0.5 text-center"
-          aria-label="m21"
-        />
-        <input
-          type="number"
-          step={0.1}
-          value={matrix[1][1]}
-          onChange={(e) => updateCell(1, 1, parseFloat(e.target.value) || 0)}
-          className="w-14 rounded border border-slate-300 px-1.5 py-0.5 text-center"
-          aria-label="m22"
-        />
+        {[0, 1].map((r) =>
+          [0, 1].map((c) => (
+            <input
+              key={`${r}${c}`}
+              type="number"
+              step={0.1}
+              value={matrix[r][c]}
+              onChange={(e) => updateCell(r, c, parseFloat(e.target.value) || 0)}
+              className="w-14 rounded border border-slate-300 px-1.5 py-0.5 text-center"
+              aria-label={`m${r + 1}${c + 1}`}
+            />
+          ))
+        )}
+        {matrix.length > 1 && <span className="mx-0.5 text-slate-300">|</span>}
       </div>
     </div>
   );
-}
-
-function drawArrow(
-  ctx: CanvasRenderingContext2D,
-  x1: number,
-  y1: number,
-  x2: number,
-  y2: number,
-  color: string,
-  lineWidth: number,
-  label?: string
-) {
-  const dx = x2 - x1;
-  const dy = y2 - y1;
-  const len = Math.sqrt(dx * dx + dy * dy);
-  if (len < 2) return;
-
-  const ux = dx / len;
-  const uy = dy / len;
-
-  ctx.strokeStyle = color;
-  ctx.lineWidth = lineWidth;
-  ctx.lineCap = "round";
-  ctx.beginPath();
-  ctx.moveTo(x1, y1);
-  ctx.lineTo(x2, y2);
-  ctx.stroke();
-
-  const arrowSize = Math.min(12, len / 3);
-  ctx.beginPath();
-  ctx.moveTo(x2, y2);
-  ctx.lineTo(x2 - arrowSize * ux + arrowSize * 0.4 * uy, y2 - arrowSize * uy - arrowSize * 0.4 * ux);
-  ctx.lineTo(x2 - arrowSize * ux - arrowSize * 0.4 * uy, y2 - arrowSize * uy + arrowSize * 0.4 * ux);
-  ctx.closePath();
-  ctx.fillStyle = color;
-  ctx.fill();
-
-  if (label) {
-    ctx.fillStyle = color;
-    ctx.font = "bold 13px sans-serif";
-    ctx.textAlign = "left";
-    ctx.fillText(label, x2 + 10 * ux, y2 + 10 * uy);
-  }
 }
