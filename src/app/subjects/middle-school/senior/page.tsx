@@ -5,8 +5,7 @@ import Link from "next/link";
 import type { SeniorChapter, SeniorProgress } from "@/math-engine/middle-school/senior";
 import { SENIOR_CHAPTERS } from "@/math-engine/middle-school/senior";
 import { LatexView } from "@/components/common/LatexView";
-import { renderVisual } from "@/components/middle-school/visuals/VisualSystem";
-import type { VisualType } from "@/components/middle-school/visuals/VisualSystem";
+import { renderVisualByKp } from "@/components/middle-school/visuals/VisualSystem";
 
 const LS_KEY = "math-canvas-senior-math-progress";
 
@@ -27,22 +26,8 @@ function init(): SeniorProgress {
   };
 }
 
-function renderVis(cid: string) {
-  const map: Record<string, VisualType> = {
-    "sn-sets": "logic-diagram",
-    "sn-quadratic": "function-graph",
-    "sn-func-props": "function-graph",
-    "sn-exp-log": "function-graph",
-    "sn-trig": "unit-circle",
-    "sn-vectors": "vector-plane",
-    "sn-sequences": "function-graph",
-    "sn-geometry-3d": "geometry-board",
-    "sn-analytic-geo": "conic-section",
-    "sn-stat-prob": "statistics-chart",
-    "sn-counting": "counting-tree",
-    "sn-derivatives": "derivative-lab",
-  };
-  return renderVisual(map[cid] ?? "function-graph");
+function renderVis(kpId: string) {
+  return renderVisualByKp(kpId);
 }
 
 export default function SeniorMathPage() {
@@ -134,7 +119,7 @@ export default function SeniorMathPage() {
             </>:<div className="flex h-64 items-center justify-center text-sm text-slate-400">请从左侧选择章节</div>}
           </div>
           <div className="border-t border-slate-200 lg:w-[420px] lg:shrink-0 lg:border-l lg:border-t-0">
-            {showVis&&<div className="border-b border-slate-200 p-4"><h4 className="mb-3 text-sm font-medium text-slate-700">交互可视化</h4>{renderVis(chId)}</div>}
+            {showVis&&<div className="border-b border-slate-200 p-4"><h4 className="mb-3 text-sm font-medium text-slate-700">交互可视化</h4>{renderVis(point?.id??"")}</div>}
             <div className="p-4"><div className="rounded-lg border border-dashed border-slate-300 p-6 text-center text-xs text-slate-400">练习题功能可通过数学画布进行实际操作练习。<br/><Link href="/subjects/math-canvas" className="mt-2 inline-block text-primary-600 hover:underline">前往数学画布 →</Link></div></div>
           </div>
         </div>

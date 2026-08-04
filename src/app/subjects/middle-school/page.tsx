@@ -5,8 +5,7 @@ import Link from "next/link";
 import type { MiddleStage, MiddleChapter } from "@/math-engine/middle-school/course/types";
 import { JUNIOR_STAGE } from "@/math-engine/middle-school/course/junior-course-data";
 import { LatexView } from "@/components/common/LatexView";
-import { renderVisual } from "@/components/middle-school/visuals/VisualSystem";
-import type { VisualType } from "@/components/middle-school/visuals/VisualSystem";
+import { renderVisualByKp } from "@/components/middle-school/visuals/VisualSystem";
 
 const LS_KEY = "math-canvas-middle-school-progress-v2";
 
@@ -92,20 +91,9 @@ export default function MiddleSchoolPage() {
     setProgress({ ...progress, [stage]: sp2 });
   }, [point, chapter, currentChId, pointIdx, stage, progress]);
 
-  const visMap: Record<string, VisualType> = {
-    "jr-numbers": "number-line",
-    "jr-equations": "equation-balance",
-    "jr-inequalities": "inequality-line",
-    "jr-functions": "function-graph",
-    "jr-geometry": "geometry-board",
-    "jr-triangle-circle": "geometry-board",
-    "jr-statistics": "statistics-chart",
-    "jr-applications": "function-graph",
-  };
-
   const renderVis = () => {
-    const t = visMap[currentChId] ?? "function-graph";
-    return renderVisual(t);
+    if (!point) return renderVisualByKp("");
+    return renderVisualByKp(point.id);
   };
 
   const Section = ({ title, children, color = "slate" }: { title: string; children: React.ReactNode; color?: string }) => {

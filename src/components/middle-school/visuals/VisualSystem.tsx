@@ -3,7 +3,8 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import Link from "next/link";
 
-// ===================== Visualization Type System =====================
+import { getVisConfig, type GeometryVisualType } from "@/math-engine/middle-school/geometry/visual-config";
+import { TrianglePropertiesLab, PythagoreanLab, RightTriangleTrigLab, CircleTheoremLab, SolidGeometryLab } from "@/components/middle-school/geometry/GeometryLabs";
 
 export type VisualType =
   | "number-line"
@@ -293,7 +294,45 @@ export const VISUAL_COMPONENTS: Record<VisualType, React.FC> = {
 
 // ===================== Visual Router =====================
 
-export function renderVisual(type: VisualType) {
-  const Comp = VISUAL_COMPONENTS[type];
-  return Comp ? <Comp /> : <FunctionGraphLab />;
+export function renderVisualByKp(kpId: string) {
+  const cfg = getVisConfig(kpId);
+  if (!cfg) return <FallbackVis kpId={kpId} />;
+  switch (cfg.type) {
+    case "number-line": return <NumberLineLab />;
+    case "algebra-tiles": return <AlgebraTilesLab />;
+    case "inequality-line": return <InequalityLineLab />;
+    case "function-graph": return <FunctionGraphLab />;
+    case "geometry-board": case "triangle-properties": return <TrianglePropertiesLab />;
+    case "pythagorean-lab": return <PythagoreanLab />;
+    case "right-triangle-trig": return <RightTriangleTrigLab />;
+    case "circle-theorem": return <CircleTheoremLab />;
+    case "solid-geometry": return <SolidGeometryLab />;
+    case "similarity-lab": case "congruence-lab": return <TrianglePropertiesLab />;
+    default: return <FallbackVis kpId={kpId} />;
+  }
+}
+
+function FallbackVis({ kpId }: { kpId: string }) {
+  return (
+    <div className="rounded-lg border border-dashed border-slate-300 p-6 text-center text-xs text-slate-400">
+      <p>该知识点（{kpId}）的可视化实验正在开发中</p>
+      <p className="mt-2">如需函数绘图、参数滑块和导数分析，请前往数学画布</p>
+      <Link href="/subjects/math-canvas" className="mt-2 inline-block rounded bg-primary-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-primary-700">前往数学画布 →</Link>
+    </div>
+  );
+}
+
+export function renderVisual(type: GeometryVisualType) {
+  switch (type) {
+    case "number-line": return <NumberLineLab />;
+    case "algebra-tiles": return <AlgebraTilesLab />;
+    case "inequality-line": return <InequalityLineLab />;
+    case "function-graph": return <FunctionGraphLab />;
+    case "triangle-properties": return <TrianglePropertiesLab />;
+    case "pythagorean-lab": return <PythagoreanLab />;
+    case "right-triangle-trig": return <RightTriangleTrigLab />;
+    case "circle-theorem": return <CircleTheoremLab />;
+    case "solid-geometry": return <SolidGeometryLab />;
+    default: return <FunctionGraphLab />;
+  }
 }
