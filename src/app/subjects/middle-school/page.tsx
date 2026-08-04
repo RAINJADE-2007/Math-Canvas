@@ -65,6 +65,7 @@ export default function MiddleSchoolPage() {
   }, [chapters, currentChId]);
 
   const switchStage = (s: MiddleStage) => {
+    if (s === "senior") return; // handled by separate page
     setStage(s);
     const st = s === "junior" ? progress.junior : progress.senior;
     const chs = s === "junior" ? JUNIOR_STAGE.chapters : [];
@@ -111,20 +112,6 @@ export default function MiddleSchoolPage() {
     return <div className={`rounded-lg border ${colors[color] ?? colors.slate}`}><div className="px-4 py-2.5 text-sm font-medium">{title}</div><div className="px-4 pb-3 text-xs leading-relaxed text-slate-600">{children}</div></div>;
   };
 
-  if (stage === "senior" && chapters.length === 0) {
-    return (
-      <div className="mx-auto max-w-[800px] px-6 py-16 text-center">
-        <h1 className="text-2xl font-bold text-slate-900">高中数学</h1>
-        <p className="mt-4 text-slate-500">高中数学课程数据正在开发中，敬请期待。</p>
-        <div className="mt-6 space-y-3 text-left text-sm text-slate-600">
-          <p>计划涵盖10章内容：集合与逻辑、函数、三角函数、平面向量与复数、数列、立体几何、解析几何、统计与概率、计数原理、导数与数学建模。</p>
-          <p>每章含3-5个知识点，每个知识点含目标、情境导入、直觉解释、严谨定义、公式、例题、常见错误、总结和自检。</p>
-        </div>
-        <button onClick={() => switchStage("junior")} className="mt-8 rounded-lg bg-primary-600 px-6 py-2.5 text-sm font-medium text-white hover:bg-primary-700">回到初中数学 →</button>
-      </div>
-    );
-  }
-
   return (
     <div className="mx-auto flex min-h-[calc(100vh-108px)] max-w-[1600px] flex-col">
       <div className="flex items-center justify-between border-b border-slate-200 bg-white px-4 py-2">
@@ -137,7 +124,7 @@ export default function MiddleSchoolPage() {
           {showStagePicker && (
             <div className="absolute left-[180px] top-[52px] z-50 rounded-lg border border-slate-200 bg-white p-2 shadow-lg">
               <button onClick={() => { switchStage("junior"); setShowStagePicker(false); }} className={`block w-full rounded px-3 py-2 text-left text-sm ${stage === "junior" ? "bg-primary-50 text-primary-700" : "text-slate-600 hover:bg-slate-50"}`}>初中数学</button>
-              <button onClick={() => { switchStage("senior"); setShowStagePicker(false); }} className={`block w-full rounded px-3 py-2 text-left text-sm ${stage === "senior" ? "bg-primary-50 text-primary-700" : "text-slate-600 hover:bg-slate-50"}`}>高中数学</button>
+              <Link href="/subjects/middle-school/senior" className="block w-full rounded px-3 py-2 text-left text-sm text-slate-600 hover:bg-slate-50" onClick={() => setShowStagePicker(false)}>高中数学 →</Link>
             </div>
           )}
         </div>
